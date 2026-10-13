@@ -92,9 +92,9 @@ export default function Login() {
             </div>
           </div>
 
-          <h2 className="text-base font-light text-gray-800 mb-2">SICAP</h2>
+          <h2 className="text-base font-light text-gray-800 mb-2">SIGERSA CORE</h2>
           <p className="text-gray-600 text-xs">
-            Ingrese sus credenciales corporativas
+            Plataforma Central de SIGERSA
           </p>
         </div>
 
@@ -177,7 +177,7 @@ export default function Login() {
             © 2026 Sigersa Innovaciones S.A. de C.V.
           </p>
           <p className="text-xs text-gray-400">
-            Versión 2.0
+            Versión 1.0
           </p>
         </div>
 
