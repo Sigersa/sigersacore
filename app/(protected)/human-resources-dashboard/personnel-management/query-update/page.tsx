@@ -220,6 +220,7 @@ interface EditFormData {
   fechaInicio: string;
   proyectoId: string;
   salaryIMSS: string;
+  fechaAltaIMSS: string;
   beneficiaryFirstName: string;
   beneficiaryLastName: string;
   beneficiaryMiddleName: string;
@@ -404,6 +405,7 @@ export default function EmployeesListPage() {
     fechaInicio: '',
     proyectoId: '',
     salaryIMSS: '',
+    fechaAltaIMSS: '',
     beneficiaryFirstName: '',
     beneficiaryLastName: '',
     beneficiaryMiddleName: '',
@@ -808,12 +810,13 @@ export default function EmployeesListPage() {
           fechaInicio: formatDateForInput(contractInfo.fechaInicio),
           proyectoId: currentProjectId,
           salaryIMSS: contractInfo.salaryIMSS?.toString() || '',
+          fechaAltaIMSS: data.fechaAltaIMSS ? formatDateForInput(data.fechaAltaIMSS) : '',
           beneficiaryFirstName: benFirstName,
           beneficiaryLastName: benLastName,
           beneficiaryMiddleName: benMiddleName,
           beneficiaryRelationship: beneficiario?.parentesco || '',
           beneficiaryPercentage: beneficiario?.porcentaje?.toString() || '',
-          jefeDirectoId: ''
+          jefeDirectoId: contractInfo.jefeDirectoId?.toString() || ''
         });
         
         if (employee.tipo === 'PROJECT') {
@@ -834,7 +837,7 @@ export default function EmployeesListPage() {
 
   const handleEditFormChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    const shouldUpperCase = !['email', 'fechaNacimiento', 'fechaInicio', 'salario', 'salaryIMSS', 'beneficiaryPercentage', 'proyectoId'].includes(name);
+    const shouldUpperCase = !['email', 'fechaNacimiento', 'fechaInicio', 'salario', 'salaryIMSS', 'beneficiaryPercentage', 'proyectoId', 'fechaAltaIMSS'].includes(name);
     const newValue = shouldUpperCase ? toUpperCaseWithAccents(value) : value;
     
     setEditFormData(prev => ({ ...prev, [name]: newValue }));
@@ -963,29 +966,36 @@ export default function EmployeesListPage() {
         CRFileURL: finalUrls.CRFileURL,
         RIFileURL: finalUrls.RIFileURL,
         EMFileURL: finalUrls.EMFileURL,
-        FotoFileURL: finalUrls.FotoFileURL      };
+        FotoFileURL: finalUrls.FotoFileURL
+      };
       
-      const isEmployeeInactive = selectedEmployee.Status === 0;
-      
+      // ============================================
+      // CORRECCIÓN PRINCIPAL:
+      // - BASE: SIEMPRE envía contractInfo (activo o inactivo)
+      //   NOTA: fechaAltaIMSS NO se envía porque está deshabilitado en el formulario
+      // - PROJECT: solo envía contractInfo si está INACTIVO
+      //   (porque PROJECT activo no puede modificar campos laborales)
+      // ============================================
       let contractInfoData = undefined;
       
-      if (isEmployeeInactive) {
-        if (selectedEmployee.tipo === 'BASE') {
-          contractInfoData = {
-            startDate: editFormData.fechaInicio,
-            salaryIMSS: editFormData.salaryIMSS ? parseFloat(editFormData.salaryIMSS) : null,
-            jefeDirectoId: editFormData.jefeDirectoId ? parseInt(editFormData.jefeDirectoId) : null
-          };
-        } else {
-          contractInfoData = {
-            salaryIMSS: editFormData.salaryIMSS ? parseFloat(editFormData.salaryIMSS) : null,
-            position: toUpperCaseWithAccents(editFormData.puesto),
-            salary: parseFloat(editFormData.salario) || 0,
-            workSchedule: toUpperCaseWithAccents(editFormData.horario),
-            projectId: editFormData.proyectoId ? parseInt(editFormData.proyectoId) : null,
-            jefeDirectoId: editFormData.jefeDirectoId ? parseInt(editFormData.jefeDirectoId) : null
-          };
-        }
+      if (selectedEmployee.tipo === 'BASE') {
+        // BASE siempre puede actualizar su contrato (activo o inactivo)
+        // NOTA: fechaAltaIMSS NO se envía porque está deshabilitado en el formulario
+        contractInfoData = {
+          startDate: editFormData.fechaInicio || null,
+          salaryIMSS: editFormData.salaryIMSS ? parseFloat(editFormData.salaryIMSS) : null,
+          jefeDirectoId: editFormData.jefeDirectoId ? parseInt(editFormData.jefeDirectoId) : null
+        };
+      } else if (selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 0) {
+        // PROJECT solo si está inactivo
+        contractInfoData = {
+          salaryIMSS: editFormData.salaryIMSS ? parseFloat(editFormData.salaryIMSS) : null,
+          position: toUpperCaseWithAccents(editFormData.puesto),
+          salary: parseFloat(editFormData.salario) || 0,
+          workSchedule: toUpperCaseWithAccents(editFormData.horario),
+          projectId: editFormData.proyectoId ? parseInt(editFormData.proyectoId) : null,
+          jefeDirectoId: editFormData.jefeDirectoId ? parseInt(editFormData.jefeDirectoId) : null
+        };
       }
       
       const updateData = {
@@ -1470,7 +1480,7 @@ export default function EmployeesListPage() {
                       <div><label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Apellido Paterno</label><input type="text" name="lastName" value={editFormData.lastName} onChange={handleEditFormChange} className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" /></div>
                       <div><label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Apellido Materno</label><input type="text" name="middleName" value={editFormData.middleName} onChange={handleEditFormChange} className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" /></div>
                       <div><label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Fecha Nacimiento</label><input type="date" name="fechaNacimiento" value={editFormData.fechaNacimiento} onChange={handleEditFormChange} className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" /></div>
-                      <div><label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Género</label><select name="genero" value={editFormData.genero} onChange={handleEditFormChange} className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]}"><option value="">Seleccione</option><option value="MASCULINO">MASCULINO</option><option value="FEMENINO">FEMENINO</option></select></div>
+                      <div><label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Género</label><select name="genero" value={editFormData.genero} onChange={handleEditFormChange} className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]"><option value="">Seleccione</option><option value="MASCULINO">MASCULINO</option><option value="FEMENINO">FEMENINO</option></select></div>
                       <div><label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Estado Civil</label><select name="estadoCivil" value={editFormData.estadoCivil} onChange={handleEditFormChange} className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]"><option value="">Seleccione</option><option value="SOLTERO">SOLTERO</option><option value="CASADO">CASADO</option><option value="DIVORCIADO">DIVORCIADO</option><option value="VIUDO">VIUDO</option><option value="UNION LIBRE">UNIÓN LIBRE</option></select></div>
                       <div><label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Nacionalidad</label><select name="nacionalidad" value={editFormData.nacionalidad} onChange={handleEditFormChange} className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]"><option value="">Seleccione</option><option value="MEXICANA">MEXICANA</option><option value="EXTRANJERA">EXTRANJERA</option></select></div>
                       <div><label className="block text-xs font-bold text-gray-700 mb-1 uppercase">RFC</label><input type="text" name="rfc" value={editFormData.rfc} onChange={handleEditFormChange} className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" /></div>
@@ -1536,8 +1546,7 @@ export default function EmployeesListPage() {
                               name="area" 
                               value={editFormData.area} 
                               onChange={handleEditFormChange} 
-                              disabled={selectedEmployee.Status === 1}
-                              className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${selectedEmployee.Status === 1 ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`} 
+                              className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" 
                             />
                           </div>
                           <div>
@@ -1547,8 +1556,7 @@ export default function EmployeesListPage() {
                               name="fechaInicio" 
                               value={editFormData.fechaInicio} 
                               onChange={handleEditFormChange} 
-                              disabled={selectedEmployee.Status === 1}
-                              className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${selectedEmployee.Status === 1 ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`} 
+                              className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" 
                             />
                           </div>
                           <div>
@@ -1557,8 +1565,8 @@ export default function EmployeesListPage() {
                               name="jefeDirectoId" 
                               value={editFormData.jefeDirectoId} 
                               onChange={handleEditFormChange} 
-                              disabled={loadingPersonalBase || selectedEmployee.Status === 1}
-                              className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${selectedEmployee.Status === 1 ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
+                              disabled={loadingPersonalBase}
+                              className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${loadingPersonalBase ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
                             >
                               <option value="">SELECCIONE JEFE DIRECTO</option>
                               {personalBaseList.map((jefe) => (
@@ -1659,15 +1667,19 @@ export default function EmployeesListPage() {
                           <option value="OTRO">OTRO</option>
                         </select>
                       </div>
-                      <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Fecha de Alta IMSS</label>
-                        <input 
-                          type="text" 
-                          value={employeeDetails.fechaAltaIMSS ? formatDate(employeeDetails.fechaAltaIMSS) : 'N/A'} 
-                          disabled 
-                          className="w-full px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded text-gray-600 cursor-not-allowed" 
-                        />
-                      </div>
+                      {selectedEmployee.tipo === 'BASE' && (
+                        <div>
+                          <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Fecha de Alta IMSS</label>
+                          <input 
+                            type="date" 
+                            name="fechaAltaIMSS"
+                            value={editFormData.fechaAltaIMSS || ''} 
+                            onChange={handleEditFormChange}
+                            disabled
+                            className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" 
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
 
