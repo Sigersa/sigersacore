@@ -293,13 +293,12 @@ export async function GET(
 
         // Obtener Fecha de Alta IMSS para proyecto
         const [imssMovements] = await connection.execute(`
-          SELECT emb.DateMovement 
+          SELECT eii.DateMovement 
           FROM projectpersonnel pp
           LEFT JOIN employees e ON e.EmployeeID = pp.EmployeeID
           LEFT JOIN employeeimssinfonavitmovements eii ON eii.EmployeeID = e.EmployeeID
-          LEFT JOIN employee_movement_batches emb ON emb.BatchID = eii.BatchID
           WHERE pp.EmployeeID = ? AND eii.Status = 1
-          ORDER BY emb.DateMovement DESC
+          ORDER BY eii.DateMovement DESC
           LIMIT 1
         `, [employeeId]);
 
