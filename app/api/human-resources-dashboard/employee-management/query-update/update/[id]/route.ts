@@ -187,35 +187,21 @@ export async function PUT(
       const currentStatus = employeeStatusRows[0].Status;
       console.log('currentStatus:', currentStatus);
 
-      // Si el empleado está activo, NO permitir actualización de información laboral
-      if (currentStatus === 1 && contractInfo && Object.keys(contractInfo).length > 0) {
-        if (tipo === 'PROJECT') {
-          await connection.rollback();
-          return NextResponse.json(
-            { 
-              success: false, 
-              message: 'NO SE PUEDE ACTUALIZAR INFORMACIÓN LABORAL. EL EMPLEADO DE PROYECTO ESTÁ ACTIVO. PRIMERO DEBE REALIZAR LA BAJA.' 
-            },
-            { status: 403 }
-          );
-        }
-        if (tipo === 'BASE') {
-          const hasLaboralChanges = 
-            contractInfo.salaryIMSS !== undefined ||
-            contractInfo.startDate !== undefined ||
-            contractInfo.jefeDirectoId !== undefined;
-          
-          if (hasLaboralChanges) {
-            await connection.rollback();
-            return NextResponse.json(
-              { 
-                success: false, 
-                message: 'NO SE PUEDE ACTUALIZAR INFORMACIÓN LABORAL. EL EMPLEADO ESTÁ ACTIVO. PRIMERO DEBE REALIZAR LA BAJA.' 
-              },
-              { status: 403 }
-            );
-          }
-        }
+      // ============================================
+      // REGLAS DE NEGOCIO:
+      // - PROJECT activo: NO se permite modificar NINGÚN campo laboral (debe darse de baja primero)
+      // - BASE activo: SÍ se permite modificar todos los campos laborales
+      // - Cualquier empleado inactivo: SÍ se permite modificar todos los campos laborales
+      // ============================================
+      if (currentStatus === 1 && tipo === 'PROJECT' && contractInfo && Object.keys(contractInfo).length > 0) {
+        await connection.rollback();
+        return NextResponse.json(
+          { 
+            success: false, 
+            message: 'NO SE PUEDE ACTUALIZAR INFORMACIÓN LABORAL. EL EMPLEADO DE PROYECTO ESTÁ ACTIVO. PRIMERO DEBE REALIZAR LA BAJA.' 
+          },
+          { status: 403 }
+        );
       }
 
       let basePersonnelId: number | null = null;
@@ -337,8 +323,12 @@ export async function PUT(
           }
         }
 
-        // Actualizar contractInfo para BASE
-        if (contractInfo && currentStatus === 0) {
+        // ============================================
+        // ACTUALIZAR CONTRATO PARA BASE
+        // AHORA SE PERMITE SIEMPRE (activo o inactivo)
+        // NOTA: fechaAltaIMSS NO se actualiza porque está deshabilitado en el formulario
+        // ============================================
+        if (contractInfo) {
           const { startDate, salaryIMSS, jefeDirectoId } = contractInfo;
           const fechaInicioFormateada = formatearFechaMySQL(startDate);
 
@@ -361,7 +351,7 @@ export async function PUT(
               ]
             );
             shouldGenerateDocuments = true;
-            documentGenerationReason = 'Actualización de contrato existente para empleado BASE inactivo';
+            documentGenerationReason = 'Actualización de contrato existente para empleado BASE';
             console.log(`Contrato existente actualizado para empleado BASE ${employeeId}, se generarán documentos`);
           } else {
             const [insertResult] = await connection.execute(
@@ -385,10 +375,6 @@ export async function PUT(
             );
             console.log(`Nuevo contrato creado para empleado BASE ${employeeId}, se generarán documentos`);
           }
-        } else if (personalInfo && currentStatus === 1) {
-          // Si solo se actualizó información personal (no laboral) y el empleado está activo
-          // No regeneramos documentos automáticamente a menos que se soliciten cambios en documentación
-          console.log(`Solo actualización de información personal para empleado BASE activo ${employeeId}`);
         }
 
         // Actualizar documentación
