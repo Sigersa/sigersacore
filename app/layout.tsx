@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SICAP",
-  description: "Sistema Integral de Control Administrativo y de Procesos",
+  title: "SIGERSA CORE",
+  description: "Plataforma Central de SIGERSA",
 };
 
 export default function RootLayout({
