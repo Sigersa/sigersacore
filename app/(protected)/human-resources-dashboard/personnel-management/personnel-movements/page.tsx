@@ -767,7 +767,7 @@ export default function EmployeeMovementsPage() {
                   ¡REGISTRO EXITOSO!
                 </h2>
                 <p className="text-gray-600 mt-1 text-sm">
-                  El movimiento ha sido registrado correctamente en el sistema.
+                  El movimiento ha sido registrado correctamente.
                 </p>
               </div>
               <button
