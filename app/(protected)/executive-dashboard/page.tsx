@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState } from 'react'
 import AppHeader from '@/components/header/4/4'
 import Footer from '@/components/footer'
 import { useRouter } from 'next/navigation'
@@ -91,6 +91,13 @@ export default function Page() {
       description: 'Asignación y conclusión de proyectos corporativos',
       icon: <ToolCase className="h-6 w-6" />,
       href: '/executive-dashboard/modules/project-assignment-completion'
+    },
+    {
+      id: 5,
+      title: 'GESTIÓN DE PROJECT MANAGER EXTERNOS',
+      description: 'Administración de Project Managers',
+      icon: <Users className="h-6 w-6" />,
+      href: '/executive-dashboard/modules/external-managers'
     }
   ]
 
@@ -223,7 +230,7 @@ export default function Page() {
               <div className="bg-[#3a6ea5] p-4 rounded-lg shadow border border-[#3a6ea5] w-full">
                 <h1 className="text-xl font-bold text-white tracking-tight">MENÚ PRINCIPAL</h1>
                 <p className="text-sm text-gray-200 mt-1">
-                  Seleccione una opción para acceder a las funciones del sistema
+                  Seleccione una opción para acceder a las funciones 
                 </p>
               </div>
             </div>
