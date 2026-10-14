@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     };
 
     const message = exists 
-      ? `EL ${fieldNames[field] || field} YA ESTÁ REGISTRADO EN EL SISTEMA`
+      ? `EL ${fieldNames[field] || field} YA ESTÁ REGISTRADO`
       : undefined;
 
     return NextResponse.json({
