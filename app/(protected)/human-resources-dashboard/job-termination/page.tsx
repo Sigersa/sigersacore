@@ -407,7 +407,7 @@ export default function EmployeesListPage() {
       const data = await response.json();
 
       if (response.ok && data.success) {
-        setSuccessMessage(data.message || 'EMPLEADO ELIMINADO PERMANENTEMENTE DEL SISTEMA');
+        setSuccessMessage(data.message || 'EMPLEADO ELIMINADO PERMANENTEMENTE');
         await fetchEmployees();
       } else {
         const errorMsg = data.message || 'ERROR AL ELIMINAR EL EMPLEADO';
@@ -435,7 +435,7 @@ export default function EmployeesListPage() {
   const handleDownloadFile = async (url: string | null | undefined, filename: string) => {
     if (!url) {
       setError('No hay archivo disponible para descargar');
-      setErrorDetails('El documento solicitado no se encontró en el sistema.');
+      setErrorDetails('El documento solicitado no se encontró.');
       return;
     }
     
@@ -891,7 +891,7 @@ export default function EmployeesListPage() {
                   ¡REGISTRO EXITOSO!
                 </h2>
                 <p className="text-gray-600 mt-1 text-sm">
-                  La baja ha sido registrada correctamente en el sistema.
+                  La baja ha sido registrada correctamente.
                 </p>
               </div>
               <button
@@ -1224,7 +1224,7 @@ export default function EmployeesListPage() {
                 BAJA / TERMINACIÓN LABORAL
               </h1>
               <p className="text-sm text-gray-200 mt-1">
-                Registre bajas y generación de documentación para la terminación laboral de empleados en el sistema.              
+                Registre bajas y generación de documentación para la terminación laboral de empleados.              
               </p>
             </div>
           </div>
@@ -1359,7 +1359,7 @@ export default function EmployeesListPage() {
                           <p className="text-sm font-medium text-gray-600">
                             {filters.search || filters.tipo !== 'TODOS' || filters.projectId
                               ? 'No se encontraron empleados que coincidan con la búsqueda'
-                              : 'No hay empleados registrados en el sistema'}
+                              : 'No hay empleados registrados'}
                           </p>
                         </div>
                       </td>
