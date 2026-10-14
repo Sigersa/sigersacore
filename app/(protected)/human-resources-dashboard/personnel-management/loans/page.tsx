@@ -710,7 +710,7 @@ const handleSaveLoan = async () => {
                   ¡REGISTRO EXITOSO!
                 </h2>
                 <p className="text-gray-600 mt-1 text-sm">
-                  El préstamo ha sido registrado correctamente en el sistema.
+                  El préstamo ha sido registrado correctamente.
                 </p>
               </div>
               <button
