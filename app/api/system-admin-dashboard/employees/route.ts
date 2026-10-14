@@ -20,26 +20,53 @@ export async function GET(req: NextRequest) {
 
     connection = await getConnection();
 
-    // Obtener empleados base personnel que no tienen usuario 
-    const [rows]: any = await connection.execute(`
-      SELECT 
-        e.EmployeeID,
-        bp.FirstName, 
-        bp.LastName,
-        bp.MiddleName,
-        CONCAT(bp.FirstName, ' ', bp.LastName, ' ', IFNULL(bp.MiddleName, '')) AS FullName,
-        bpi.Email
-      FROM employees e
-      INNER JOIN basepersonnel bp 
-          ON e.EmployeeID = bp.EmployeeID  
-      LEFT JOIN basepersonnelpersonalinfo bpi 
-          ON bp.BasePersonnelID = bpi.BasePersonnelID
-      LEFT JOIN systemusers su 
-          ON e.EmployeeID = su.EmployeeID
-      WHERE su.SystemUserID IS NULL
-          AND e.EmployeeType = 'BASE' 
-      ORDER BY bp.LastName, bp.FirstName;
-    `);
+    // ✅ Obtener el modo desde query params
+    const { searchParams } = new URL(req.url);
+    const mode = searchParams.get('mode'); // 'edit' para traer TODOS los empleados
+
+    let rows: any;
+
+    if (mode === 'edit') {
+      // ✅ MODO EDICIÓN: Traer TODOS los empleados BASE (con o sin usuario)
+      // para poder mostrar el empleado que se está editando
+      [rows] = await connection.execute(`
+        SELECT 
+          e.EmployeeID,
+          bp.FirstName, 
+          bp.LastName,
+          bp.MiddleName,
+          CONCAT(bp.FirstName, ' ', bp.LastName, ' ', IFNULL(bp.MiddleName, '')) AS FullName,
+          bpi.Email
+        FROM employees e
+        INNER JOIN basepersonnel bp 
+            ON e.EmployeeID = bp.EmployeeID  
+        LEFT JOIN basepersonnelpersonalinfo bpi 
+            ON bp.BasePersonnelID = bpi.BasePersonnelID
+        WHERE e.EmployeeType = 'BASE' 
+        ORDER BY bp.LastName, bp.FirstName;
+      `);
+    } else {
+      // ✅ MODO CREACIÓN (default): Solo empleados BASE SIN usuario asignado
+      [rows] = await connection.execute(`
+        SELECT 
+          e.EmployeeID,
+          bp.FirstName, 
+          bp.LastName,
+          bp.MiddleName,
+          CONCAT(bp.FirstName, ' ', bp.LastName, ' ', IFNULL(bp.MiddleName, '')) AS FullName,
+          bpi.Email
+        FROM employees e
+        INNER JOIN basepersonnel bp 
+            ON e.EmployeeID = bp.EmployeeID  
+        LEFT JOIN basepersonnelpersonalinfo bpi 
+            ON bp.BasePersonnelID = bpi.BasePersonnelID
+        LEFT JOIN systemusers su 
+            ON e.EmployeeID = su.EmployeeID
+        WHERE su.SystemUserID IS NULL
+            AND e.EmployeeType = 'BASE' 
+        ORDER BY bp.LastName, bp.FirstName;
+      `);
+    }
 
     return NextResponse.json(rows, { status: 200 });
 
