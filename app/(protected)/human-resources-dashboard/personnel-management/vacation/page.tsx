@@ -1037,7 +1037,7 @@ export default function SystemAdminDashboard() {
                 <p className="text-gray-600 mt-1 text-sm">
                   {successDetails.completedVacations 
                     ? 'El empleado ha completado todas sus vacaciones. Se ha generado el documento FT-RH-08.'
-                    : 'El período de vacaciones ha sido registrado correctamente en el sistema.'}
+                    : 'El período de vacaciones ha sido registrado correctamente.'}
                 </p>
               </div>
               <button
