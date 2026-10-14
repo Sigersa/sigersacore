@@ -839,7 +839,7 @@ export async function POST(request: NextRequest) {
       if (error && typeof error === 'object' && 'code' in error) {
         const mysqlError = error as MySqlError;
         if (mysqlError.code === 'ER_DUP_ENTRY') {
-          let mensajeDuplicado = 'EL EMPLEADO YA EXISTE EN EL SISTEMA';
+          let mensajeDuplicado = 'EL EMPLEADO YA EXISTE';
           
           if (mysqlError.sqlMessage) {
             if (mysqlError.sqlMessage.includes('CURP')) {
