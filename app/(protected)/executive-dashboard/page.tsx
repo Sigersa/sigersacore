@@ -94,7 +94,7 @@ export default function Page() {
     },
     {
       id: 5,
-      title: 'GESTIÓN DE PROJECT MANAGER EXTERNOS',
+      title: 'GESTIÓN DE PROJECT MANAGERS EXTERNOS',
       description: 'Administración de Project Managers',
       icon: <Users className="h-6 w-6" />,
       href: '/executive-dashboard/modules/external-managers'
