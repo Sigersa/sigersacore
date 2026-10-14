@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     const { ProjectType, NameProject } = projectData[0];
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Sistema GERSA';
+    workbook.creator = 'Sigersa';
     workbook.created = new Date();
 
     const tables = getTablesByProjectType(ProjectType);
