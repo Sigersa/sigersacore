@@ -51,12 +51,6 @@ interface Employee {
   Status: number;
 }
 
-interface ClientFromAPI {
-  clientId: number;
-  clientName: string;
-  businessName: string;
-}
-
 interface Client {
   ClientID: number;
   ClientName: string;
@@ -67,8 +61,8 @@ interface ExternalProjectManager {
   ExternalProjectManagerID: number;
   NameProjectManager: string;
   ClientID: number;
-  Email: string;
-  Phone: string;
+  Email: string | null;
+  Phone: string | null;
 }
 
 interface Area {
@@ -76,6 +70,12 @@ interface Area {
   AreaName: string;
   ClientID: number;
 }
+
+// ============ FUNCIÓN PARA CONVERTIR A MAYÚSCULAS ============
+
+const toUpperCaseWithAccents = (text: string): string => {
+  return text.toUpperCase();
+};
 
 // ============ MODAL GENÉRICO ============
 
@@ -272,7 +272,7 @@ const CompleteModal = ({ isOpen, onClose, onConfirm, project }: {
 
 // ============ MODAL ASIGNAR PROYECTO ============
 
-const AssignProjectModal = ({ isOpen, onClose, onSave, users, employees, clients, areas, isSubmitting }: {
+const AssignProjectModal = ({ isOpen, onClose, onSave, users, employees, clients, areas, externalManagers, isSubmitting }: {
   isOpen: boolean;
   onClose: () => void;
   onSave: (project: any) => void;
@@ -280,6 +280,7 @@ const AssignProjectModal = ({ isOpen, onClose, onSave, users, employees, clients
   employees: Employee[];
   clients: Client[];
   areas: Area[];
+  externalManagers: ExternalProjectManager[];
   isSubmitting: boolean;
 }) => {
   const [newProject, setNewProject] = useState({
@@ -289,9 +290,7 @@ const AssignProjectModal = ({ isOpen, onClose, onSave, users, employees, clients
     ClientID: '',
     ProjectType: '',
     ProjectBudget: '',
-    ExternalProjectManagerName: '',
-    ExternalProjectManagerEmail: '',
-    ExternalProjectManagerPhone: '',
+    ExternalProjectManagerID: '',
     AreaID: '',
     Status: '0',
     StartDate: new Date().toISOString().split('T')[0],
@@ -299,6 +298,7 @@ const AssignProjectModal = ({ isOpen, onClose, onSave, users, employees, clients
   });
 
   const [localAreas, setLocalAreas] = useState<Area[]>([]);
+  const [localManagers, setLocalManagers] = useState<ExternalProjectManager[]>([]);
   const [modal, setModal] = useState({
     isOpen: false,
     title: '',
@@ -356,6 +356,12 @@ const AssignProjectModal = ({ isOpen, onClose, onSave, users, employees, clients
         ...prev,
         [name]: formattedValue
       }));
+    } else if (name === 'NameProject' || name === 'ProjectAddress') {
+      // Convertir a mayúsculas los campos de texto
+      setNewProject(prev => ({
+        ...prev,
+        [name]: toUpperCaseWithAccents(value)
+      }));
     } else {
       setNewProject(prev => ({
         ...prev,
@@ -363,6 +369,7 @@ const AssignProjectModal = ({ isOpen, onClose, onSave, users, employees, clients
       }));
     }
 
+    // Cuando cambia el cliente, filtrar áreas Y Project Managers
     if (name === 'ClientID') {
       if (value === '1') {
         const siemensAreas = areas.filter(area => area.ClientID === 1);
@@ -371,6 +378,19 @@ const AssignProjectModal = ({ isOpen, onClose, onSave, users, employees, clients
         setLocalAreas([]);
         setNewProject(prev => ({ ...prev, AreaID: '' }));
       }
+
+      // Filtrar project managers por cliente seleccionado
+      if (value) {
+        const filteredManagers = externalManagers.filter(
+          manager => manager.ClientID === parseInt(value)
+        );
+        setLocalManagers(filteredManagers);
+      } else {
+        setLocalManagers([]);
+      }
+
+      // Resetear el Project Manager al cambiar cliente
+      setNewProject(prev => ({ ...prev, ExternalProjectManagerID: '' }));
     }
   };
 
@@ -418,15 +438,13 @@ const AssignProjectModal = ({ isOpen, onClose, onSave, users, employees, clients
     }
 
     const projectData = {
-      NameProject: newProject.NameProject,
-      ProjectAddress: newProject.ProjectAddress || null,
+      NameProject: toUpperCaseWithAccents(newProject.NameProject.trim()),
+      ProjectAddress: newProject.ProjectAddress ? toUpperCaseWithAccents(newProject.ProjectAddress.trim()) : null,
       AdminProjectID: parseInt(newProject.AdminProjectID),
       ClientID: parseInt(newProject.ClientID),
       ProjectType: parseInt(newProject.ProjectType),
       ProjectBudget: parseCurrency(newProject.ProjectBudget),
-      ExternalProjectManagerName: newProject.ExternalProjectManagerName || '',
-      ExternalProjectManagerEmail: newProject.ExternalProjectManagerEmail || '',
-      ExternalProjectManagerPhone: newProject.ExternalProjectManagerPhone || '',
+      ExternalProjectManagerID: newProject.ExternalProjectManagerID ? parseInt(newProject.ExternalProjectManagerID) : null,
       AreaID: newProject.ClientID === '1' ? (newProject.AreaID ? parseInt(newProject.AreaID) : null) : null,
       Status: 0,
       StartDate: newProject.StartDate || new Date().toISOString().split('T')[0],
@@ -444,15 +462,14 @@ const AssignProjectModal = ({ isOpen, onClose, onSave, users, employees, clients
       ClientID: '',
       ProjectType: '',
       ProjectBudget: '',
-      ExternalProjectManagerName: '',
-      ExternalProjectManagerEmail: '',
-      ExternalProjectManagerPhone: '',
+      ExternalProjectManagerID: '',
       AreaID: '',
       Status: '0',
       StartDate: new Date().toISOString().split('T')[0],
       EndDate: ''
     });
     setLocalAreas([]);
+    setLocalManagers([]);
     onClose();
   };
 
@@ -615,8 +632,8 @@ const AssignProjectModal = ({ isOpen, onClose, onSave, users, employees, clients
                     required
                   >
                     <option value="">Seleccionar tipo</option>
-                    <option value="1">Servicio especializado</option>
-                    <option value="2">Servicio llave en mano</option>
+                    <option value="1">SERVICIO ESPECIALIZADO</option>
+                    <option value="2">SERVICIO LLAVE EN MANO</option>
                   </select>
                 </div>
               </div>
@@ -638,51 +655,39 @@ const AssignProjectModal = ({ isOpen, onClose, onSave, users, employees, clients
                   />
                 </div>
 
+                {/* Project Manager Externo - Selector */}
                 <div>
-                  <label htmlFor="ExternalProjectManagerName" className="block text-xs font-bold text-gray-700 mb-2 uppercase">
+                  <label htmlFor="ExternalProjectManagerID" className="block text-xs font-bold text-gray-700 mb-2 uppercase">
                     Project Manager (Externo) *
                   </label>
-                  <input
-                    type="text"
-                    id="ExternalProjectManagerName"
-                    name="ExternalProjectManagerName"
-                    value={newProject.ExternalProjectManagerName}
+                  <select
+                    id="ExternalProjectManagerID"
+                    name="ExternalProjectManagerID"
+                    value={newProject.ExternalProjectManagerID}
                     onChange={handleInputChange}
-                    className="block w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
+                    className="block w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium appearance-none"
                     required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label htmlFor="ExternalProjectManagerEmail" className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                    Correo del Project Manager *
-                  </label>
-                  <input
-                    type="email"
-                    id="ExternalProjectManagerEmail"
-                    name="ExternalProjectManagerEmail"
-                    value={newProject.ExternalProjectManagerEmail}
-                    onChange={handleInputChange}
-                    className="block w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="ExternalProjectManagerPhone" className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                    Teléfono del Project Manager *
-                  </label>
-                  <input
-                    type="tel"
-                    id="ExternalProjectManagerPhone"
-                    name="ExternalProjectManagerPhone"
-                    value={newProject.ExternalProjectManagerPhone}
-                    onChange={handleInputChange}
-                    className="block w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                    required
-                  />
+                    disabled={!newProject.ClientID}
+                  >
+                    <option value="">
+                      {!newProject.ClientID 
+                        ? 'Seleccione un cliente primero' 
+                        : localManagers.length === 0 
+                          ? 'No hay Project Managers para este cliente'
+                          : 'Seleccionar Project Manager'}
+                    </option>
+                    {localManagers.map(manager => (
+                      <option key={`manager-${manager.ExternalProjectManagerID}`} value={manager.ExternalProjectManagerID}>
+                        {manager.NameProjectManager}
+                        {manager.Email ? ` - ${manager.Email}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {newProject.ClientID && localManagers.length === 0 && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      No hay Project Managers externos registrados para este cliente.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -754,7 +759,7 @@ const AssignProjectModal = ({ isOpen, onClose, onSave, users, employees, clients
 
 // ============ MODAL EDITAR PROYECTO ============
 
-const EditProjectModal = ({ isOpen, onClose, project, onSave, users, employees, clients, areas, isSaving }: {
+const EditProjectModal = ({ isOpen, onClose, project, onSave, users, employees, clients, areas, externalManagers, isSaving }: {
   isOpen: boolean;
   onClose: () => void;
   project: Project | null;
@@ -763,10 +768,12 @@ const EditProjectModal = ({ isOpen, onClose, project, onSave, users, employees, 
   employees: Employee[];
   clients: Client[];
   areas: Area[];
+  externalManagers: ExternalProjectManager[];
   isSaving: boolean;
 }) => {
   const [editData, setEditData] = useState<Project | null>(null);
   const [editAreas, setEditAreas] = useState<Area[]>([]);
+  const [editManagers, setEditManagers] = useState<ExternalProjectManager[]>([]);
   const [modal, setModal] = useState({
     isOpen: false,
     title: '',
@@ -836,8 +843,18 @@ const EditProjectModal = ({ isOpen, onClose, project, onSave, users, employees, 
       } else {
         setEditAreas([]);
       }
+
+      // Cargar Project Managers del cliente actual
+      if (project.ClientID) {
+        const filteredManagers = externalManagers.filter(
+          manager => manager.ClientID === project.ClientID
+        );
+        setEditManagers(filteredManagers);
+      } else {
+        setEditManagers([]);
+      }
     }
-  }, [project, areas]);
+  }, [project, areas, externalManagers]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     if (!editData) return;
@@ -853,12 +870,19 @@ const EditProjectModal = ({ isOpen, onClose, project, onSave, users, employees, 
         _budgetDisplay: formattedValue,
         ProjectBudget: numericValue
       }));
+    } else if (name === 'NameProject' || name === 'ProjectAddress') {
+      // Convertir a mayúsculas los campos de texto
+      setEditData(prev => ({
+        ...prev!,
+        [name]: toUpperCaseWithAccents(value)
+      }));
     } else if (name === 'ClientID') {
       const newClientId = value ? parseInt(value) : null;
       setEditData(prev => ({
         ...prev!,
         [name]: newClientId,
-        AreaID: newClientId === 1 ? prev?.AreaID || null : null
+        AreaID: newClientId === 1 ? prev?.AreaID || null : null,
+        ExternalProjectManagerID: null // Resetear al cambiar cliente
       }));
       
       if (newClientId === 1) {
@@ -867,7 +891,17 @@ const EditProjectModal = ({ isOpen, onClose, project, onSave, users, employees, 
       } else {
         setEditAreas([]);
       }
-    } else if (name === 'AdminProjectID' || name === 'ProjectType' || name === 'AreaID') {
+
+      // Filtrar Project Managers por nuevo cliente
+      if (newClientId) {
+        const filteredManagers = externalManagers.filter(
+          manager => manager.ClientID === newClientId
+        );
+        setEditManagers(filteredManagers);
+      } else {
+        setEditManagers([]);
+      }
+    } else if (name === 'AdminProjectID' || name === 'ProjectType' || name === 'AreaID' || name === 'ExternalProjectManagerID') {
       setEditData(prev => ({
         ...prev!,
         [name]: value ? parseInt(value) : null
@@ -925,14 +959,12 @@ const EditProjectModal = ({ isOpen, onClose, project, onSave, users, employees, 
     }
 
     const projectData = {
-      NameProject: editData.NameProject,
+      NameProject: toUpperCaseWithAccents(editData.NameProject.trim()),
       AdminProjectID: editData.AdminProjectID,
       ClientID: editData.ClientID,
       ProjectType: editData.ProjectType,
       ProjectBudget: editData.ProjectBudget,
-      ExternalProjectManagerName: editData.ExternalProjectManagerName || '',
-      ExternalProjectManagerEmail: editData.ExternalProjectManagerEmail || '',
-      ExternalProjectManagerPhone: editData.ExternalProjectManagerPhone || '',
+      ExternalProjectManagerID: editData.ExternalProjectManagerID || null,
       AreaID: editData.ClientID === 1 ? (editData.AreaID ?? null) : null,
       StartDate: editData.StartDate || null,
       EndDate: editData.EndDate || null
@@ -944,6 +976,7 @@ const EditProjectModal = ({ isOpen, onClose, project, onSave, users, employees, 
   const handleClose = () => {
     setEditData(null);
     setEditAreas([]);
+    setEditManagers([]);
     onClose();
   };
 
@@ -1089,8 +1122,8 @@ const EditProjectModal = ({ isOpen, onClose, project, onSave, users, employees, 
                     required
                   >
                     <option value="">Seleccionar tipo</option>
-                    <option value="1">Servicio especializado</option>
-                    <option value="2">Servicio llave en mano</option>
+                    <option value="1">SERVICIO ESPECIALIZADO</option>
+                    <option value="2">SERVICIO LLAVE EN MANO</option>
                   </select>
                 </div>
               </div>
@@ -1112,51 +1145,39 @@ const EditProjectModal = ({ isOpen, onClose, project, onSave, users, employees, 
                   />
                 </div>
 
+                {/* Project Manager Externo - Selector */}
                 <div>
-                  <label htmlFor="edit-ExternalProjectManagerName" className="block text-xs font-bold text-gray-700 mb-2 uppercase">
+                  <label htmlFor="edit-ExternalProjectManagerID" className="block text-xs font-bold text-gray-700 mb-2 uppercase">
                     Project Manager (Externo) *
                   </label>
-                  <input
-                    type="text"
-                    id="edit-ExternalProjectManagerName"
-                    name="ExternalProjectManagerName"
-                    value={editData.ExternalProjectManagerName || ''}
+                  <select
+                    id="edit-ExternalProjectManagerID"
+                    name="ExternalProjectManagerID"
+                    value={editData.ExternalProjectManagerID || ''}
                     onChange={handleInputChange}
-                    className="block w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
+                    className="block w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium appearance-none"
                     required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label htmlFor="edit-ExternalProjectManagerEmail" className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                    Correo del Project Manager *
-                  </label>
-                  <input
-                    type="email"
-                    id="edit-ExternalProjectManagerEmail"
-                    name="ExternalProjectManagerEmail"
-                    value={editData.ExternalProjectManagerEmail || ''}
-                    onChange={handleInputChange}
-                    className="block w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="edit-ExternalProjectManagerPhone" className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                    Teléfono del Project Manager *
-                  </label>
-                  <input
-                    type="tel"
-                    id="edit-ExternalProjectManagerPhone"
-                    name="ExternalProjectManagerPhone"
-                    value={editData.ExternalProjectManagerPhone || ''}
-                    onChange={handleInputChange}
-                    className="block w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                    required
-                  />
+                    disabled={!editData.ClientID}
+                  >
+                    <option value="">
+                      {!editData.ClientID 
+                        ? 'Seleccione un cliente primero' 
+                        : editManagers.length === 0 
+                          ? 'No hay Project Managers para este cliente'
+                          : 'Seleccionar Project Manager'}
+                    </option>
+                    {editManagers.map(manager => (
+                      <option key={`edit-manager-${manager.ExternalProjectManagerID}`} value={manager.ExternalProjectManagerID}>
+                        {manager.NameProjectManager}
+                        {manager.Email ? ` - ${manager.Email}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {editData.ClientID && editManagers.length === 0 && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      No hay Project Managers externos registrados para este cliente.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1491,7 +1512,7 @@ export default function ProjectsPage() {
 
   const fetchExternalManagers = useCallback(async () => {
     try {
-      const response = await fetch('/api/executive-manager/projects2?externalManagers=true');
+      const response = await fetch('/api/executive-manager/external-managers');
       if (response.ok) {
         const data = await response.json();
         setExternalManagers(Array.isArray(data) ? data : []);
@@ -1719,7 +1740,7 @@ export default function ProjectsPage() {
                   GESTIÓN DE PROYECTOS
                 </h1>
                 <p className="text-sm text-gray-200 mt-1">
-                  Administra y visualiza todos los proyectos registrados en el sistema.
+                  Administra y visualiza todos los proyectos registrados.
                 </p>
               </div>
             </div>
@@ -1756,164 +1777,164 @@ export default function ProjectsPage() {
               </div>
 
               {/* Tabla de Proyectos */}
-<div className="overflow-x-auto">
-  {tableLoading ? (
-    <div className="flex justify-center items-center py-12">
-      <div className="flex flex-col items-center space-y-4">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#3a6ea5]"></div>
-        <p className="text-sm text-gray-600 font-medium">Cargando proyectos...</p>
-      </div>
-    </div>
-  ) : (
-    <>
-      {filteredProjects.length > 0 ? (
-        <table className="w-full">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
-                NOMBRE
-              </th>
-              <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
-                ESTADO
-              </th>
-              <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
-                ADMINISTRADOR (INTERNO)
-              </th>
-              <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
-                PROJECT MANAGER (EXTERNO)
-              </th>
-              <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
-                CLIENTE
-              </th>
-              <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
-                TIPO
-              </th>
-              <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
-                PRESUPUESTO
-              </th>
-              <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
-                FECHA INICIO
-              </th>
-              <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
-                FECHA TÉRMINO
-              </th>
-              <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
-                ÁREA
-              </th>
-              <th className="py-3 px-4 text-center text-sm font-bold text-gray-700 uppercase border-b border-gray-300">
-                ACCIONES
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredProjects.map((project) => {
-              const user = users.find(u => u.EmployeeID === project.AdminProjectID);
-              const client = clients.find(c => c.ClientID === project.ClientID);
-              const externalManager = externalManagers.find(m => m.ExternalProjectManagerID === project.ExternalProjectManagerID);
-              const projectType = project.ProjectType === 1
-                ? 'Servicio especializado'
-                : 'Servicio llave en mano';
-              const clientName = client ? (client.ClientName || 'No asignado') : 'No asignado';
-
-              return (
-                <tr key={`project-${project.ProjectID}`} className="hover:bg-gray-50 transition-colors border-b border-gray-300">
-                  <td className="py-3 px-4 text-sm text-gray-800 font-medium">
-                    {project.NameProject}
-                  </td>
-                  <td className="py-3 px-4">
-                    {project.Status === 1 ? (
-                      <span className="px-2 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-green-100 text-green-800">
-                        CONCLUIDO
-                      </span>
-                    ) : (
-                      <span className="px-2 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-yellow-100 text-yellow-800">
-                        EN PROGRESO
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800">
-                    {user ? user.UserName : 'No asignado'}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800">
-                    {externalManager ? (
-                      <div>
-                        <div className="font-medium">{externalManager.NameProjectManager}</div>
-                        <div className="text-xs text-gray-500 mt-0.5">
-                          {externalManager.Email} | {externalManager.Phone}
-                        </div>
-                      </div>
-                    ) : (
-                      'No asignado'
-                    )}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800">
-                    {clientName}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800">
-                    {projectType}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800 font-medium">
-                    {formatCurrency(project.ProjectBudget)}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800">
-                    {formatDate(project.StartDate)}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800">
-                    {formatDate(project.EndDate)}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-800">
-                    {project.ClientID === 1 ? getAreaName(project.AreaID) : 'N/A'}
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center justify-center gap-2">
-                      {project.Status === 0 ? (
-                        <>
-                          <button
-                            onClick={() => openEditModal(project)}
-                            className="inline-flex items-center px-3 py-1.5 border border-[#3a6ea5] text-[#3a6ea5] font-bold rounded-lg hover:bg-[#3a6ea5] hover:text-white transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#3a6ea5] focus:ring-offset-1 text-xs"
-                          >
-                            <Edit className="w-3 h-3 mr-1" />
-                            EDITAR
-                          </button>
-                          <button
-                            onClick={() => handleConfirmComplete(project)}
-                            className="inline-flex items-center px-3 py-1.5 border border-green-600 text-green-600 font-bold rounded-lg hover:bg-green-600 hover:text-white transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 text-xs"
-                          >
-                            <CheckCircle className="w-3 h-3 mr-1" />
-                            CONCLUIR
-                          </button>
-                        </>
-                      ) : (
-                        <span className="text-xs text-gray-500 font-medium">Sin acciones</span>
-                      )}
-                      <button
-                        onClick={() => openDeleteModal(project)}
-                        className="inline-flex items-center px-3 py-1.5 border border-red-600 text-red-600 font-bold rounded-lg hover:bg-red-600 hover:text-white transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 text-xs"
-                      >
-                        <Trash2 className="w-3 h-3 mr-1" />
-                        ELIMINAR
-                      </button>
+              <div className="overflow-x-auto">
+                {tableLoading ? (
+                  <div className="flex justify-center items-center py-12">
+                    <div className="flex flex-col items-center space-y-4">
+                      <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#3a6ea5]"></div>
+                      <p className="text-sm text-gray-600 font-medium">Cargando proyectos...</p>
                     </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      ) : (
-        <div className="py-12 text-center">
-          <FileText className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-bold text-gray-900">NO HAY PROYECTOS</h3>
-          <p className="mt-1 text-sm text-gray-500">
-            {searchTerm
-              ? 'No se encontraron proyectos que coincidan con tu búsqueda.'
-              : 'No se han encontrado proyectos registrados.'}
-          </p>
-        </div>
-      )}
-    </>
-  )}
-</div>
+                  </div>
+                ) : (
+                  <>
+                    {filteredProjects.length > 0 ? (
+                      <table className="w-full">
+                        <thead className="bg-gray-100">
+                          <tr>
+                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
+                              NOMBRE
+                            </th>
+                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
+                              ESTADO
+                            </th>
+                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
+                              ADMINISTRADOR (INTERNO)
+                            </th>
+                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
+                              PROJECT MANAGER (EXTERNO)
+                            </th>
+                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
+                              CLIENTE
+                            </th>
+                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
+                              TIPO
+                            </th>
+                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
+                              PRESUPUESTO
+                            </th>
+                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
+                              FECHA INICIO
+                            </th>
+                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
+                              FECHA TÉRMINO
+                            </th>
+                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 border-r border-gray-300">
+                              ÁREA
+                            </th>
+                            <th className="py-3 px-4 text-center text-sm font-bold text-gray-700 uppercase border-b border-gray-300">
+                              ACCIONES
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredProjects.map((project) => {
+                            const user = users.find(u => u.EmployeeID === project.AdminProjectID);
+                            const client = clients.find(c => c.ClientID === project.ClientID);
+                            const externalManager = externalManagers.find(m => m.ExternalProjectManagerID === project.ExternalProjectManagerID);
+                            const projectType = project.ProjectType === 1
+                              ? 'SERVICIO ESPECIALIZADO'
+                              : 'SERVICIO LLAVE EN MANO';
+                            const clientName = client ? (client.ClientName || 'No asignado') : 'No asignado';
+
+                            return (
+                              <tr key={`project-${project.ProjectID}`} className="hover:bg-gray-50 transition-colors border-b border-gray-300">
+                                <td className="py-3 px-4 text-sm text-gray-800 font-medium">
+                                  {project.NameProject}
+                                </td>
+                                <td className="py-3 px-4">
+                                  {project.Status === 1 ? (
+                                    <span className="px-2 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-green-100 text-green-800">
+                                      CONCLUIDO
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-yellow-100 text-yellow-800">
+                                      EN PROGRESO
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-gray-800">
+                                  {user ? user.UserName : 'No asignado'}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-gray-800">
+                                  {externalManager ? (
+                                    <div>
+                                      <div className="font-medium">{externalManager.NameProjectManager}</div>
+                                      <div className="text-xs text-gray-500 mt-0.5">
+                                        {externalManager.Email} | {externalManager.Phone}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    'No asignado'
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-gray-800">
+                                  {clientName}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-gray-800">
+                                  {projectType}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-gray-800 font-medium">
+                                  {formatCurrency(project.ProjectBudget)}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-gray-800">
+                                  {formatDate(project.StartDate)}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-gray-800">
+                                  {formatDate(project.EndDate)}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-gray-800">
+                                  {project.ClientID === 1 ? getAreaName(project.AreaID) : 'N/A'}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center justify-center gap-2">
+                                    {project.Status === 0 ? (
+                                      <>
+                                        <button
+                                          onClick={() => openEditModal(project)}
+                                          className="inline-flex items-center px-3 py-1.5 border border-[#3a6ea5] text-[#3a6ea5] font-bold rounded-lg hover:bg-[#3a6ea5] hover:text-white transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#3a6ea5] focus:ring-offset-1 text-xs"
+                                        >
+                                          <Edit className="w-3 h-3 mr-1" />
+                                          EDITAR
+                                        </button>
+                                        <button
+                                          onClick={() => handleConfirmComplete(project)}
+                                          className="inline-flex items-center px-3 py-1.5 border border-green-600 text-green-600 font-bold rounded-lg hover:bg-green-600 hover:text-white transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 text-xs"
+                                        >
+                                          <CheckCircle className="w-3 h-3 mr-1" />
+                                          CONCLUIR
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <span className="text-xs text-gray-500 font-medium">Sin acciones</span>
+                                    )}
+                                    <button
+                                      onClick={() => openDeleteModal(project)}
+                                      className="inline-flex items-center px-3 py-1.5 border border-red-600 text-red-600 font-bold rounded-lg hover:bg-red-600 hover:text-white transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 text-xs"
+                                    >
+                                      <Trash2 className="w-3 h-3 mr-1" />
+                                      ELIMINAR
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <div className="py-12 text-center">
+                        <FileText className="mx-auto h-12 w-12 text-gray-400" />
+                        <h3 className="mt-2 text-sm font-bold text-gray-900">NO HAY PROYECTOS</h3>
+                        <p className="mt-1 text-sm text-gray-500">
+                          {searchTerm
+                            ? 'No se encontraron proyectos que coincidan con tu búsqueda.'
+                            : 'No se han encontrado proyectos registrados.'}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1952,6 +1973,7 @@ export default function ProjectsPage() {
         employees={employees}
         clients={clients}
         areas={areas}
+        externalManagers={externalManagers}
         isSubmitting={isSubmitting}
       />
 
@@ -1964,6 +1986,7 @@ export default function ProjectsPage() {
         employees={employees}
         clients={clients}
         areas={areas}
+        externalManagers={externalManagers}
         isSaving={isSaving}
       />
 
