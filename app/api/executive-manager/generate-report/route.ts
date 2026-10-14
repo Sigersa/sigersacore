@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     }
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Sistema Sigersa';
+    workbook.creator = 'Sigersa';
     workbook.created = new Date();
     let reportName = 'reporte.xlsx';
 
