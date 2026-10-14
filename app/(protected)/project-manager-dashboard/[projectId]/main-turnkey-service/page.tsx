@@ -80,7 +80,7 @@ export default function Page({ params }: PageProps) {
   const [currentProject, setCurrentProject] = useState<ProjectData | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Determinar si el sistema debe estar deshabilitado (solo por presupuesto excedido)
+  // Determinar si debe estar deshabilitado (solo por presupuesto excedido)
   const isSystemDisabled = useMemo(() => {
     return budgetStatus.budgetExceeded
   }, [budgetStatus.budgetExceeded])
@@ -107,7 +107,7 @@ export default function Page({ params }: PageProps) {
 
     const fetchData = async () => {
       try {
-        // Validar sesión usando el mismo endpoint del sistema existente
+        // Validar sesión usando el mismo endpoint del existente
         const sessionResponse = await fetch('/api/auth/validate-session', {
           credentials: 'include'
         })
@@ -392,7 +392,7 @@ export default function Page({ params }: PageProps) {
                     {typeof budgetStatus.budgetUsagePercentage === 'number'
                       ? budgetStatus.budgetUsagePercentage.toFixed(2)
                       : '0.00'}
-                    % utilizado). El acceso a las funcionalidades del sistema han sido
+                    % utilizado). El acceso a las funcionalidades han sido
                     deshabilitadas hasta que se te asigne presupuesto adicional.
                   </p>
                 </div>
@@ -701,7 +701,7 @@ export default function Page({ params }: PageProps) {
   )
 }
 
-// Componente DashboardCard - Estilo consistente con ProjectCard del sistema existente
+// Componente DashboardCard - Estilo consistente con ProjectCard existente
 function DashboardCard({
   title,
   icon,
