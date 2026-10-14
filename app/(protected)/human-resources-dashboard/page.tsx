@@ -79,7 +79,7 @@ export default function SystemAdminDashboard() {
               <div className="bg-[#3a6ea5] p-4 rounded-lg shadow border border-[#3a6ea5] w-full">
                 <h1 className="text-xl font-bold text-white tracking-tight">MENÚ PRINCIPAL</h1>
                 <p className="text-sm text-gray-200 mt-1">
-                  Seleccione una opción para acceder a las funciones del sistema
+                  Seleccione una opción para acceder a las funciones
                 </p>
               </div>
             </div>
