@@ -881,7 +881,7 @@ export default function EmployeePermissionsPage() {
                   ¡REGISTRO EXITOSO!
                 </h2>
                 <p className="text-gray-600 mt-1 text-sm">
-                  El permiso ha sido registrado correctamente en el sistema.
+                  El permiso ha sido registrado correctamente.
                 </p>
               </div>
               <button
