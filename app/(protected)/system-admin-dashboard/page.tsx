@@ -480,7 +480,7 @@ export default function SystemAdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <AppHeader title="PANEL DE CONTROL DEL SISTEMA" />
+      <AppHeader title="PANEL DE CONTROL" />
 
       {/* MODAL PARA CREAR/EDITAR USUARIO */}
       {showModal && (
@@ -851,8 +851,8 @@ export default function SystemAdminDashboard() {
                   <AlertTriangle className="h-5 w-5 text-orange-600 mr-2 flex-shrink-0" />
                   <p className="text-xs text-gray-600 leading-5">
                     {userToDeactivate.UserTypeID === 0 
-                      ? <><strong>Información:</strong> Al reactivar el usuario, se le asignará el tipo de usuario seleccionado y podrá acceder al sistema nuevamente.</>
-                      : <><strong>Información:</strong> Al dar de baja al usuario, ya no podrá acceder al sistema. Los datos del usuario se mantendrán en el sistema.</>
+                      ? <><strong>Información:</strong> Al reactivar el usuario, se le asignará el tipo de usuario seleccionado y podrá acceder nuevamente.</>
+                      : <><strong>Información:</strong> Al dar de baja al usuario, ya no podrá acceder. Los datos del usuario se mantendrán registrados.</>
                     }
                   </p>
                 </div>
@@ -956,7 +956,7 @@ export default function SystemAdminDashboard() {
                 <div className="flex">
                   <AlertTriangle className="h-5 w-5 text-orange-600 mr-2 flex-shrink-0" />
                   <p className="text-xs text-gray-600 leading-5">
-                    <strong>Advertencia:</strong> Esta acción eliminará permanentemente al usuario del sistema. 
+                    <strong>Advertencia:</strong> Esta acción eliminará permanentemente al usuario. 
                     El empleado podrá volver a tener un usuario asignado en el futuro.
                   </p>
                 </div>
@@ -999,7 +999,7 @@ export default function SystemAdminDashboard() {
               <div className="bg-[#3a6ea5] p-4 rounded-lg shadow border border-[#3a6ea5] w-full">
                 <h1 className="text-xl font-bold text-white tracking-tight">GESTIÓN DE USUARIOS</h1>
                 <p className="text-sm text-gray-200 mt-1">
-                  Administre los usuarios del sistema basados en empleados
+                  Administre los usuarios basados en empleados
                 </p>
               </div>
             </div>
