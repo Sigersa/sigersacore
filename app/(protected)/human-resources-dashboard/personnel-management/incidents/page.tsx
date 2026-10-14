@@ -693,7 +693,7 @@ export default function EmployeeIncidencePage() {
                                     ¡REGISTRO EXITOSO!
                                 </h2>
                                 <p className="text-gray-600 mt-1 text-sm">
-                                    La incidencia ha sido registrada correctamente en el sistema.
+                                    La incidencia ha sido registrada correctamente.
                                 </p>
                             </div>
                             <button
