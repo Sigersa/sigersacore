@@ -419,7 +419,7 @@ export default function SystemAdminDashboard() {
             ...filtered,
             {
               field,
-              message: data.message || `El ${fieldNames[field] || field} ya está registrado en el sistema`
+              message: data.message || `El ${fieldNames[field] || field} ya está registrado`
             }
           ];
         }
@@ -2216,7 +2216,7 @@ export default function SystemAdminDashboard() {
                   ¡REGISTRO EXITOSO!
                 </h2>
                 <p className="text-gray-600 mt-1 text-sm">
-                  El empleado ha sido registrado correctamente en el sistema.
+                  El empleado ha sido registrado correctamente.
                 </p>
               </div>
               <button
@@ -2572,7 +2572,7 @@ export default function SystemAdminDashboard() {
               <div className="bg-[#3a6ea5] p-4 rounded-lg shadow border border-[#3a6ea5] w-full">
                 <h1 className="text-xl font-bold text-white tracking-tight">INGRESO / CONTRATACIÓN</h1>
                 <p className="text-sm text-gray-200 mt-1">
-                  Para dar de alta a un nuevo empleado en el sistema, seleccione el tipo de personal y complete el formulario correspondiente.
+                  Para dar de alta a un nuevo empleado, seleccione el tipo de personal y complete el formulario correspondiente.
                 </p>
               </div>
             </div>
