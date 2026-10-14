@@ -73,54 +73,38 @@ const getUserTypeColor = (userTypeID: number) => {
 
 // Generar usuario con nombre sin espacios
 const generateUsername = (employeeData: { FirstName: string, LastName: string, MiddleName: string }): string => {
-  // Limpiar nombres: eliminar espacios y tomar solo la primera letra
   const firstNameClean = employeeData.FirstName.trim();
   const lastNameClean = employeeData.LastName.trim();
   const middleNameClean = employeeData.MiddleName ? employeeData.MiddleName.trim() : '';
   
-  // Tomar primera letra del nombre 
   const firstNameInitial = firstNameClean.split(' ')[0].charAt(0).toUpperCase();
-  
-  // Tomar primera letra del apellido paterno
   const lastNameInitial = lastNameClean.charAt(0).toUpperCase();
-  
-  // Apellido materno completo 
   const middleName = middleNameClean.replace(/\s/g, '');
   
-  // Construir base del username
   let usernameBase = firstNameInitial + lastNameInitial + middleName;
   
-  // Asegurar que tenga al menos 3 caracteres
   if (usernameBase.length < 3) {
     usernameBase = usernameBase.padEnd(3, 'X');
   }
   
-  // Generar 2 números aleatorios
   const randomNumbers = Math.floor(10 + Math.random() * 90).toString();
-  
-  // Generar 1 letra minúscula aleatoria
   const letters = 'abcdefghijklmnopqrstuvwxyz';
   const randomLetter = letters.charAt(Math.floor(Math.random() * letters.length));
   
   return usernameBase + randomNumbers + randomLetter;
 };
 
-// Generar contraseña con mayúsculas
+// Generar contraseña
 const generatePassword = (employeeData: { FirstName: string, LastName: string }): string => {
-  // Limpiar nombres
   const firstName = employeeData.FirstName.trim().split(' ')[0];
   const lastName = employeeData.LastName.trim();
   
-  // 2 números aleatorios
   const randomNumbers = Math.floor(10 + Math.random() * 90).toString();
-  
-  // Símbolo aleatorio
   const symbols = '!@#$%^&*';
   const randomSymbol = symbols.charAt(Math.floor(Math.random() * symbols.length));
-  
-  // Letra minúscula aleatoria
   const letters = 'abcdefghijklmnopqrstuvwxyz';
   const randomLetter = letters.charAt(Math.floor(Math.random() * letters.length));
+  
   return `${firstName}.${lastName}.${randomNumbers}${randomSymbol}${randomLetter}`;
 };
 
@@ -143,7 +127,9 @@ export default function SystemAdminDashboard() {
   const [userToDelete, setUserToDelete] = useState<UserData | null>(null);
   const [userToDeactivate, setUserToDeactivate] = useState<UserData | null>(null);
   const [reactivateUserType, setReactivateUserType] = useState<number>(0);
+  
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -163,16 +149,38 @@ export default function SystemAdminDashboard() {
     const fetchEmployees = async () => {
       setLoadingEmployees(true);
       try {
-        const res = await fetch('/api/system-admin-dashboard/employees');
-        
-        if (res.ok) {
-          const data = await res.json();
-          setEmployees(data);
-        } else {
-          const errorText = await res.text();
-          console.error('Error en respuesta:', errorText);
-          throw new Error(`Error ${res.status}: ${res.statusText}`);
+        const resAvailable = await fetch('/api/system-admin-dashboard/employees');
+        if (resAvailable.ok) {
+          const data = await resAvailable.json();
+          const normalized: Employee[] = Array.isArray(data) 
+            ? data.map((emp: any) => ({
+                EmployeeID: Number(emp.EmployeeID),
+                FirstName: emp.FirstName || '',
+                LastName: emp.LastName || '',
+                MiddleName: emp.MiddleName || '',
+                FullName: emp.FullName || `${emp.FirstName || ''} ${emp.LastName || ''} ${emp.MiddleName || ''}`.trim(),
+                Email: emp.Email || ''
+              }))
+            : [];
+          setEmployees(normalized);
         }
+
+        const resAll = await fetch('/api/system-admin-dashboard/employees?mode=edit');
+        if (resAll.ok) {
+          const data = await resAll.json();
+          const normalized: Employee[] = Array.isArray(data) 
+            ? data.map((emp: any) => ({
+                EmployeeID: Number(emp.EmployeeID),
+                FirstName: emp.FirstName || '',
+                LastName: emp.LastName || '',
+                MiddleName: emp.MiddleName || '',
+                FullName: emp.FullName || `${emp.FirstName || ''} ${emp.LastName || ''} ${emp.MiddleName || ''}`.trim(),
+                Email: emp.Email || ''
+              }))
+            : [];
+          setAllEmployees(normalized);
+        }
+
       } catch (error) {
         console.error('Error al cargar empleados:', error);
         setError('Error al cargar la lista de empleados');
@@ -186,23 +194,31 @@ export default function SystemAdminDashboard() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    const newFormData = { ...formData, [name]: name === 'EmployeeID' || name === 'UserTypeID' ? parseInt(value) || 0 : value };
+    
+    const newFormData = { 
+      ...formData, 
+      [name]: name === 'EmployeeID' || name === 'UserTypeID' 
+        ? parseInt(value) || 0 
+        : value 
+    };
     setFormData(newFormData);
     
     if (name === 'EmployeeID' && value && !editingUser) {
       const employeeID = parseInt(value);
       if (employeeID > 0) {
-        const employee = employees.find(emp => emp.EmployeeID === employeeID);
+        // ✅ Para creación, buscar en employees (solo disponibles)
+        const employee = employees.find(emp => Number(emp.EmployeeID) === employeeID);
+        
         if (employee) {
           setSelectedEmployeeData(employee);
           const username = generateUsername({
-            FirstName: employee.FirstName,
-            LastName: employee.LastName,
-            MiddleName: employee.MiddleName
+            FirstName: employee.FirstName || '',
+            LastName: employee.LastName || '',
+            MiddleName: employee.MiddleName || ''
           });
           const password = generatePassword({
-            FirstName: employee.FirstName,
-            LastName: employee.LastName
+            FirstName: employee.FirstName || '',
+            LastName: employee.LastName || ''
           });
           
           setGeneratedCredentials({ username, password });
@@ -211,6 +227,9 @@ export default function SystemAdminDashboard() {
             UserName: username,
             Password: password
           }));
+          setError(null);
+        } else {
+          setError('No se encontraron datos del empleado seleccionado');
         }
       }
     }
@@ -229,15 +248,15 @@ export default function SystemAdminDashboard() {
 
   const openEdit = (u: UserData) => {
     setEditingUser(u);
-    // Buscar el empleado para obtener sus datos completos
-    const employee = employees.find(emp => emp.EmployeeID === u.EmployeeID);
+    
+    const employee = allEmployees.find(emp => Number(emp.EmployeeID) === Number(u.EmployeeID));
     setSelectedEmployeeData(employee || null);
     
     setFormData({
-      EmployeeID: u.EmployeeID,
+      EmployeeID: Number(u.EmployeeID),
       UserName: u.UserName,
       Password: '',
-      UserTypeID: u.UserTypeID,
+      UserTypeID: Number(u.UserTypeID),
     });
     setGeneratedCredentials(null);
     setShowPasswordField(false);
@@ -279,22 +298,24 @@ export default function SystemAdminDashboard() {
     setDeactivateLoading(false);
   };
 
-  // Generar nueva contraseña para edición
   const generateNewPassword = () => {
     if (!formData.EmployeeID) {
       setError('Por favor seleccione un empleado primero');
       return;
     }
 
-    const employee = employees.find(emp => emp.EmployeeID === formData.EmployeeID);
+    const employeeIdNum = Number(formData.EmployeeID);
+    
+    const employee = allEmployees.find(emp => Number(emp.EmployeeID) === employeeIdNum);
+    
     if (!employee) {
       setError('No se encontraron datos del empleado');
       return;
     }
 
     const newPassword = generatePassword({
-      FirstName: employee.FirstName,
-      LastName: employee.LastName
+      FirstName: employee.FirstName || '',
+      LastName: employee.LastName || ''
     });
     setNewGeneratedPassword(newPassword);
     setFormData((prev: typeof formData) => ({
@@ -302,9 +323,9 @@ export default function SystemAdminDashboard() {
       Password: newPassword
     }));
     setShowPasswordField(true);
+    setError(null);
   };
 
-  // Manejar el submit correctamente
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -320,20 +341,18 @@ export default function SystemAdminDashboard() {
       }
 
       let submitData: any = {
-        EmployeeID: formData.EmployeeID,
-        UserTypeID: formData.UserTypeID,
+        EmployeeID: Number(formData.EmployeeID),
+        UserTypeID: Number(formData.UserTypeID),
         UserName: formData.UserName,
       };
       
       if (!editingUser) {
-        // Creación
         if (!generatedCredentials) {
           throw new Error('Por favor seleccione un empleado para generar las credenciales');
         }
         submitData.UserName = generatedCredentials.username;
         submitData.Password = generatedCredentials.password;
       } else {
-        // Edición
         if (newGeneratedPassword) {
           submitData.Password = newGeneratedPassword;
         } else if (formData.Password && formData.Password.trim() !== '') {
@@ -459,8 +478,8 @@ export default function SystemAdminDashboard() {
   }, [users, searchQuery]);
 
   const availableEmployees = useMemo(() => {
-    const assignedEmployeeIds = new Set(users.map(u => u.EmployeeID));
-    return employees.filter(emp => !assignedEmployeeIds.has(emp.EmployeeID));
+    const assignedEmployeeIds = new Set(users.map(u => Number(u.EmployeeID)));
+    return employees.filter(emp => !assignedEmployeeIds.has(Number(emp.EmployeeID)));
   }, [employees, users]);
 
   if (sessionLoading) {
@@ -509,6 +528,7 @@ export default function SystemAdminDashboard() {
                   setShowPasswordField(false);
                   setFormData(emptyForm);
                   setSelectedEmployeeData(null);
+                  setError(null);
                 }}
                 className="p-2 hover:bg-gray-100 rounded-full transition-colors"
                 aria-label="Cerrar modal"
@@ -612,9 +632,14 @@ export default function SystemAdminDashboard() {
                     >
                       <option value="0">Seleccione un empleado</option>
                       {editingUser ? (
-                        <option value={editingUser.EmployeeID}>
-                          {editingUser.EmployeeName} (ID: {editingUser.EmployeeID.toString()})
-                        </option>
+                        (() => {
+                          const emp = allEmployees.find(e => Number(e.EmployeeID) === Number(editingUser.EmployeeID));
+                          return (
+                            <option value={editingUser.EmployeeID}>
+                              {emp ? emp.FullName : editingUser.EmployeeName} (ID: {editingUser.EmployeeID.toString()})
+                            </option>
+                          );
+                        })()
                       ) : (
                         availableEmployees.map((emp) => (
                           <option key={emp.EmployeeID} value={emp.EmployeeID}>
@@ -726,6 +751,7 @@ export default function SystemAdminDashboard() {
                     setShowPasswordField(false);
                     setFormData(emptyForm);
                     setSelectedEmployeeData(null);
+                    setError(null);
                   }}
                   className="bg-gray-200 text-black font-bold py-2.5 px-6 rounded-lg hover:bg-gray-300 transition-colors flex items-center justify-center whitespace-nowrap"
                   disabled={loading}
