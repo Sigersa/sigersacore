@@ -67,7 +67,7 @@ interface FileData {
   tipo: string;
 }
 
-// Modal consistente con el sistema existente
+// Modal consistente existente
 const Modal = ({
   isOpen,
   onClose,
