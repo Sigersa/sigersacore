@@ -1186,7 +1186,7 @@ export default function EmployeesListPage() {
           <div className="mb-6">
             <div className="bg-[#3a6ea5] p-4 rounded-lg shadow border border-[#3a6ea5]">
               <h1 className="text-xl font-bold text-white tracking-tight">CONSULTA / ACTUALIZACIÓN</h1>
-              <p className="text-sm text-gray-200 mt-1">Visualice, edite y administre la información de los empleados registrados en el sistema.</p>
+              <p className="text-sm text-gray-200 mt-1">Visualice, edite y administre la información de los empleados registrados.</p>
             </div>
           </div>
 
@@ -1286,7 +1286,7 @@ export default function EmployeesListPage() {
                         <div className="flex flex-col items-center justify-center">
                           <AlertCircle className="h-8 w-8 text-gray-400 mb-3" />
                           <p className="text-sm font-medium text-gray-600 mt-2 leading-5">
-                            {filters.search || filters.tipo !== 'TODOS' || filters.projectId ? 'No se encontraron empleados que coincidan con la búsqueda' : 'No hay empleados registrados en el sistema'}
+                            {filters.search || filters.tipo !== 'TODOS' || filters.projectId ? 'No se encontraron empleados que coincidan con la búsqueda' : 'No hay empleados registrados'}
                           </p>
                         </div>
                       </td>
@@ -1420,7 +1420,7 @@ export default function EmployeesListPage() {
             </div>
             <div className="p-6">
               <p className="text-gray-700 mb-4">
-                El empleado de proyecto <span className="font-bold">{activeEmployeeName}</span> se encuentra en estado <span className="font-bold text-green-600">ACTIVO</span> en el sistema.
+                El empleado de proyecto <span className="font-bold">{activeEmployeeName}</span> se encuentra en estado <span className="font-bold text-green-600">ACTIVO</span>.
               </p>
               <p className="text-gray-700">
                 Para poder modificar la <span className="font-bold">INFORMACIÓN LABORAL</span> de este empleado, primero debe realizar la <span className="font-bold">BAJA</span> correspondiente.
@@ -1891,7 +1891,7 @@ export default function EmployeesListPage() {
                     ¡ACTUALIZACIÓN EXITOSA!
                   </h2>
                   <p className="text-gray-600 mt-1 text-sm">
-                    El empleado ha sido actualizado correctamente en el sistema.
+                    El empleado ha sido actualizado correctamente.
                   </p>
                 </div>
                 <button
