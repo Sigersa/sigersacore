@@ -170,6 +170,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const excludeProjectId = searchParams.get('excludeProjectId');
     const externalManagers = searchParams.get('externalManagers');
     const employeesList = searchParams.get('employees');
+    const clientId = searchParams.get('clientId');
 
     if (employeesList) {
       const [employeeRows] = await connection.query<Employee[]>(`
@@ -205,10 +206,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json(projectRows[0]);
     }
 
+    // Endpoint para obtener Project Managers Externos (opcionalmente filtrados por cliente)
     if (externalManagers) {
-      const [managers] = await connection.query<ExternalProjectManager[]>(`
-        SELECT * FROM externalprojectmanager ORDER BY NameProjectManager ASC
-      `);
+      let query = `SELECT * FROM externalprojectmanager`;
+      const params: any[] = [];
+
+      if (clientId) {
+        query += ` WHERE ClientID = ?`;
+        params.push(clientId);
+      }
+
+      query += ` ORDER BY NameProjectManager ASC`;
+
+      const [managers] = await connection.query<ExternalProjectManager[]>(query, params);
       return NextResponse.json(managers);
     }
 
@@ -333,9 +343,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ClientID,
       ProjectType,
       ProjectBudget,
-      ExternalProjectManagerName,
-      ExternalProjectManagerEmail,
-      ExternalProjectManagerPhone,
+      ExternalProjectManagerID,
       AreaID,
       StartDate,
       EndDate
@@ -401,25 +409,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
-    let externalManagerId = null;
-    if (ExternalProjectManagerName) {
-      const [existingManager] = await connection.query<ExternalProjectManager[]>(
-        `SELECT ExternalProjectManagerID FROM externalprojectmanager 
-         WHERE NameProjectManager = ? AND Email = ? AND Phone = ? AND ClientID = ?`,
-        [ExternalProjectManagerName, ExternalProjectManagerEmail || '', ExternalProjectManagerPhone || '', ClientID]
+    // Validar que el Project Manager Externo exista si se proporciona
+    let externalManagerId: number | null = null;
+    if (ExternalProjectManagerID) {
+      const [managerRows] = await connection.query<ExternalProjectManager[]>(
+        `SELECT ExternalProjectManagerID FROM externalprojectmanager WHERE ExternalProjectManagerID = ?`,
+        [ExternalProjectManagerID]
       );
 
-      if (existingManager.length > 0) {
-        externalManagerId = existingManager[0].ExternalProjectManagerID;
-      } else {
-        const [managerResult] = await connection.query<ResultSetHeader>(
-          `INSERT INTO externalprojectmanager 
-           (NameProjectManager, ClientID, Email, Phone) 
-           VALUES (?, ?, ?, ?)`,
-          [ExternalProjectManagerName, ClientID, ExternalProjectManagerEmail || '', ExternalProjectManagerPhone || '']
+      if (managerRows.length === 0) {
+        return NextResponse.json(
+          { success: false, message: 'El Project Manager Externo especificado no existe' },
+          { status: 400 }
         );
-        externalManagerId = managerResult.insertId;
       }
+
+      externalManagerId = ExternalProjectManagerID;
     }
 
     // Normalizar fechas
@@ -580,9 +585,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
         ClientID,
         ProjectType,
         ProjectBudget,
-        ExternalProjectManagerName,
-        ExternalProjectManagerEmail,
-        ExternalProjectManagerPhone,
+        ExternalProjectManagerID,
         AreaID,
         StartDate,
         EndDate
@@ -641,25 +644,22 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
         }
       }
 
-      let externalManagerId = null;
-      if (ExternalProjectManagerName) {
-        const [existingManager] = await connection.query<ExternalProjectManager[]>(
-          `SELECT ExternalProjectManagerID FROM externalprojectmanager 
-           WHERE NameProjectManager = ? AND Email = ? AND Phone = ? AND ClientID = ?`,
-          [ExternalProjectManagerName, ExternalProjectManagerEmail || '', ExternalProjectManagerPhone || '', ClientID]
+      // Validar que el Project Manager Externo exista si se proporciona
+      let externalManagerId: number | null = null;
+      if (ExternalProjectManagerID) {
+        const [managerRows] = await connection.query<ExternalProjectManager[]>(
+          `SELECT ExternalProjectManagerID FROM externalprojectmanager WHERE ExternalProjectManagerID = ?`,
+          [ExternalProjectManagerID]
         );
 
-        if (existingManager.length > 0) {
-          externalManagerId = existingManager[0].ExternalProjectManagerID;
-        } else {
-          const [managerResult] = await connection.query<ResultSetHeader>(
-            `INSERT INTO externalprojectmanager 
-             (NameProjectManager, ClientID, Email, Phone) 
-             VALUES (?, ?, ?, ?)`,
-            [ExternalProjectManagerName, ClientID, ExternalProjectManagerEmail || '', ExternalProjectManagerPhone || '']
+        if (managerRows.length === 0) {
+          return NextResponse.json(
+            { success: false, message: 'El Project Manager Externo especificado no existe' },
+            { status: 400 }
           );
-          externalManagerId = managerResult.insertId;
         }
+
+        externalManagerId = ExternalProjectManagerID;
       }
 
       // ✅ Normalizar fechas antes de pasarlas a MySQL
