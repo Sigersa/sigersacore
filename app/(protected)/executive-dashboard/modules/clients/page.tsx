@@ -25,6 +25,12 @@ interface ClientData {
   businessName: string;
 }
 
+// ============ FUNCIÓN PARA CONVERTIR A MAYÚSCULAS ============
+
+const toUpperCaseWithAccents = (text: string): string => {
+  return text.toUpperCase();
+};
+
 // Componente Modal mejorado con diseño consistente
 const Modal = ({ isOpen, onClose, title, message, type = 'info' }: {
   isOpen: boolean;
@@ -202,13 +208,13 @@ const EditModal = ({ isOpen, onClose, client, onSave }: {
         setShowCustomClient(false);
         setEditData({
           ...editData,
-          clientName: value
+          clientName: toUpperCaseWithAccents(value)
         });
       }
     } else if (name === 'clientNameInput') {
       setEditData({
         ...editData,
-        clientName: value
+        clientName: toUpperCaseWithAccents(value)
       });
     }
   };
@@ -220,7 +226,7 @@ const EditModal = ({ isOpen, onClose, client, onSave }: {
     
     setEditData({
       ...editData,
-      [name]: value
+      [name]: toUpperCaseWithAccents(value)
     });
   };
 
@@ -240,7 +246,13 @@ const EditModal = ({ isOpen, onClose, client, onSave }: {
 
     setIsSaving(true);
     try {
-      await onSave(editData);
+      // Enviar datos con mayúsculas aseguradas
+      const dataToSend: ClientData = {
+        ...editData,
+        clientName: toUpperCaseWithAccents(editData.clientName.trim()),
+        businessName: toUpperCaseWithAccents(editData.businessName.trim())
+      };
+      await onSave(dataToSend);
     } finally {
       setIsSaving(false);
     }
@@ -415,13 +427,13 @@ const AddClientModal = ({ isOpen, onClose, onSave, isSubmitting }: {
         setShowCustomClient(false);
         setClientData(prev => ({
           ...prev,
-          clientName: value
+          clientName: toUpperCaseWithAccents(value)
         }));
       }
     } else if (name === 'clientNameInput') {
       setClientData(prev => ({
         ...prev,
-        clientName: value
+        clientName: toUpperCaseWithAccents(value)
       }));
     }
   };
@@ -431,7 +443,7 @@ const AddClientModal = ({ isOpen, onClose, onSave, isSubmitting }: {
     
     setClientData(prev => ({
       ...prev,
-      [name]: value
+      [name]: toUpperCaseWithAccents(value)
     }));
   };
 
@@ -448,7 +460,14 @@ const AddClientModal = ({ isOpen, onClose, onSave, isSubmitting }: {
       return;
     }
 
-    await onSave(clientData);
+    // Enviar datos con mayúsculas aseguradas
+    const dataToSend: ClientData = {
+      ...clientData,
+      clientName: toUpperCaseWithAccents(clientData.clientName.trim()),
+      businessName: toUpperCaseWithAccents(clientData.businessName.trim())
+    };
+
+    await onSave(dataToSend);
     handleClose();
   };
 
@@ -850,7 +869,7 @@ export default function ClientsPage() {
                   GESTIÓN DE CLIENTES
                 </h1>
                 <p className="text-sm text-gray-200 mt-1">
-                  Administra y visualiza todos los clientes registrados en el sistema.
+                  Administra y visualiza todos los clientes registrados.
                 </p>
               </div>
             </div>
