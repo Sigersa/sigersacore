@@ -2,9 +2,9 @@
 
 import React, { Suspense, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import AppHeader from '@/components/header/5/5.1';
+import AppHeader from '@/components/header/3/3.1';
 import Footer from '@/components/footer';
-import { useSessionManager } from '@/hooks/useSessionManager/5';
+import { useSessionManager } from '@/hooks/useSessionManager/3';
 import { useInactivityManager } from '@/hooks/useInactivityManager';
 import { X, CheckCircle, AlertCircle } from 'lucide-react';
 
