@@ -469,7 +469,7 @@ export default function Page({ params }: PageProps) {
                 }
                 description="Generación de formato de comprobación de gastos"
                 linkText="Generar archivo"
-                href={`/project-manager-dashboard/projects/${projectId}/reports`}
+                href={`/project-manager-dashboard/projects/${projectId}/expenses-verification`}
                 disabled={disableDashboards}
                 budgetExceeded={budgetStatus.budgetExceeded}
                 projectId={projectId ? parseInt(projectId) : null}
