@@ -118,28 +118,43 @@ export async function POST(req: Request) {
 
     connection = await getConnection();
 
-    // Obtener el nombre completo del administrador del proyecto asignado al proyecto.
-    // En el nuevo esquema: projects.CreatedBy → systemusers → basepersonnel/projectpersonnel
-    let fullName = "No asignado";
+    // Obtener el ProjectID a partir del nombre del proyecto
+    let projectId: number | null = null;
     try {
-      const [rowsUD] = await connection.query<RowDataPacket[]>(
-        `SELECT
-           NULLIF(TRIM(CONCAT_WS(' ',
-             COALESCE(NULLIF(bp.FirstName, ''), NULLIF(pp.FirstName, '')),
-             COALESCE(NULLIF(bp.MiddleName, ''), NULLIF(pp.MiddleName, '')),
-             COALESCE(NULLIF(bp.LastName, ''), NULLIF(pp.LastName, ''))
-           )), '') AS fullName
-         FROM projects p
-         LEFT JOIN systemusers u ON p.CreatedBy = u.SystemUserID
-         LEFT JOIN basepersonnel bp ON u.EmployeeID = bp.EmployeeID
-         LEFT JOIN projectpersonnel pp ON u.EmployeeID = pp.EmployeeID
-         WHERE p.NameProject = ?
-         LIMIT 1`,
+      const [rowsProj] = await connection.query<RowDataPacket[]>(
+        `SELECT ProjectID FROM projects WHERE NameProject = ? LIMIT 1`,
         [projectName]
       );
-      if (rowsUD?.[0]?.fullName) fullName = String(rowsUD[0].fullName).trim();
+      if (rowsProj?.[0]?.ProjectID) {
+        projectId = Number(rowsProj[0].ProjectID);
+      }
     } catch (err) {
-      console.error("Error obteniendo nombre del administrador:", err);
+      console.error("Error obteniendo ProjectID:", err);
+    }
+
+    // Obtener el nombre completo del administrador del proyecto asignado al proyecto.
+    // Nueva consulta: projects.AdminProjectID → employees → basepersonnel
+    let fullName = "No asignado";
+    if (projectId !== null) {
+      try {
+        const [rowsUD] = await connection.query<RowDataPacket[]>(
+          `SELECT  
+             CONCAT( bp.FirstName, ' ',
+              bp.LastName, ' ',
+              bp.MiddleName ) AS fullName
+              FROM projects
+              INNER JOIN employees e ON e.EmployeeID = projects.AdminProjectID
+              LEFT JOIN basepersonnel bp ON bp.BasePersonnelID = e.EmployeeID
+              WHERE ProjectID=?`,
+          [projectId]
+        );
+        if (rowsUD?.[0]?.fullName) {
+          const nombre = String(rowsUD[0].fullName).trim();
+          if (nombre) fullName = nombre;
+        }
+      } catch (err) {
+        console.error("Error obteniendo nombre del administrador:", err);
+      }
     }
 
     const templatePath = path.join(process.cwd(), "public", "excel", "FT-CP-003.xlsx");
@@ -197,7 +212,7 @@ export async function POST(req: Request) {
     safeMergeCoords(sheet, 8, 2, 8, 7);
     sheet.getCell("B8").value = fullName;
     safeMergeCoords(sheet, 9, 2, 9, 7);
-    sheet.getCell("B9").value = "Administrador de Proyectos";
+    sheet.getCell("B9").value = "ADMINISTRADOR DE PROYECTOS";
     safeMergeCoords(sheet, 8, 11, 8, 13);
     const periodoCell = sheet.getCell("K8");
     periodoCell.value = `${formatDDMMYYYY(startDate)} - ${formatDDMMYYYY(endDate)}`;
@@ -518,7 +533,7 @@ export async function POST(req: Request) {
       sheet.getCell(disponibleRow, 9).font = { bold: true };
 
       safeMergeCoords(sheet, disponibleRow, 12, disponibleRow, 13);
-      sheet.getCell(disponibleRow, 12).value = { formula: `L${subtotalRow}-M13` };
+      sheet.getCell(disponibleRow, 12).value = { formula: `M13-L${subtotalRow}` };
       sheet.getCell(disponibleRow, 12).numFmt = '"$"#,##0.00';
       sheet.getCell(disponibleRow, 12).font = { bold: true };
       sheet.getCell(disponibleRow, 12).alignment = { horizontal: "center", vertical: "middle" };
@@ -668,7 +683,7 @@ export async function POST(req: Request) {
       sheet.getCell(disponibleRow, 9).font = { bold: true };
 
       safeMergeCoords(sheet, disponibleRow, 12, disponibleRow, 13);
-      sheet.getCell(disponibleRow, 12).value = { formula: `L${subtotalRow}-M13` };
+      sheet.getCell(disponibleRow, 12).value = { formula: `M13-L${subtotalRow}` };
       sheet.getCell(disponibleRow, 12).numFmt = '"$"#,##0.00';
       sheet.getCell(disponibleRow, 12).font = { bold: true };
       sheet.getCell(disponibleRow, 12).alignment = { horizontal: "center", vertical: "middle" };
