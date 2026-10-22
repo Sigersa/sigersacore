@@ -322,9 +322,9 @@ const PreviewModal: React.FC<PreviewModalProps> = ({ isOpen, onClose, previewDat
         <div className="p-6 pb-4 border-b border-gray-300 flex items-center justify-between sticky top-0 bg-white z-10">
           <div>
             <h2 className="text-lg font-bold text-gray-900 tracking-tight flex items-center">
-              VISTA PREVIA DEL REPORTE
+              VISTA PREVIA DEL RESUMEN
             </h2>
-            <p className="text-gray-600 mt-1 text-sm">Revise los datos antes de descargar el reporte.</p>
+            <p className="text-gray-600 mt-1 text-sm">Revise los datos antes de descargar el resumen.</p>
           </div>
           <button
             onClick={onClose}
@@ -644,10 +644,10 @@ export default function ReportsPage({ params }: PageProps) {
           <div className="mb-6">
             <div className="bg-[#3a6ea5] p-4 rounded-lg shadow border border-[#3a6ea5]">
               <h1 className="text-xl font-bold text-white tracking-tight">
-                REPORTES DE GASTOS
+                RESUMEN DE GASTOS
               </h1>
               <p className="text-sm text-gray-200 mt-1">
-                Genere un reporte en Excel con todos los gastos registrados que han sido aprovados enel proyecto actual.
+                Genere un resumen en Excel con todos los gastos registrados en el proyecto actual.
               </p>
             </div>
           </div>
@@ -671,20 +671,6 @@ export default function ReportsPage({ params }: PageProps) {
           )}
 
           <div className="bg-white rounded-lg shadow border border-gray-300 overflow-hidden">
-            
-            <div className="p-6 border-b border-gray-300 bg-gray-50">
-              <div className="flex items-center">
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900 tracking-tight">
-                    GENERAR REPORTE
-                  </h2>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Seleccione los filtros y genere su reporte
-                  </p>
-                </div>
-              </div>
-            </div>
-
             <div className="p-6">
               {displayProjectName && displayProjectName !== "Ningún proyecto asignado" && (
                 <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-300">
@@ -780,7 +766,7 @@ export default function ReportsPage({ params }: PageProps) {
                     </>
                   ) : (
                     <>
-                      DESCARGAR REPORTE
+                      DESCARGAR RESUMEN
                     </>
                   )}
                 </button>
