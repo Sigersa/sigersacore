@@ -426,7 +426,7 @@ export default function Page({ params }: PageProps) {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
               <DashboardCard
-                title="Reportes"
+                title="Resumen"
                 icon={
                   <svg
                     className="h-6 w-6 text-white"
@@ -442,8 +442,8 @@ export default function Page({ params }: PageProps) {
                     />
                   </svg>
                 }
-                description="Generación de reportes consolidados"
-                linkText="Generar reportes"
+                description="Generación de resumen de gastos registrados"
+                linkText="Generar resumen"
                 href={`/project-manager-dashboard/projects/${projectId}/reports`}
                 disabled={disableDashboards}
                 budgetExceeded={budgetStatus.budgetExceeded}
