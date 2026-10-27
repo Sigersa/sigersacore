@@ -272,7 +272,6 @@ export async function PUT(
 
       if (shouldGenerateDocuments && contractId) {
         try {
-          // ✅ AQUÍ ESTÁ LA MAGIA: Usamos el origen real de la petición en lugar de localhost
           const baseUrl = request.nextUrl.origin;
           
           console.log(`Generando formatos FT-RH para empleado ${employeeId} usando URL base: ${baseUrl}`);
