@@ -11,7 +11,7 @@ import { Search, ChevronLeft, ChevronRight, Edit, Trash2, X, RefreshCw, CheckCir
 interface EmployeePermission {
   PermissionID: number;
   EmployeeID: number;
-  ApplicationDate: string | null;
+  ApplicationDate: string;
   DepartureTime: string | null;
   CheckInTime: string | null;
   DaysOfLeave: number | null;
@@ -153,16 +153,26 @@ const formatTimeForInput = (timeString: string | null): string => {
 };
 
 // Función para formatear fecha para mostrar
-const formatDate = (dateString: string | null): string => {
-  if (!dateString) return 'N/A';
+const formatDate = (dateString: string ): string => {
+  if (!dateString) return '—';
+
+  const str = String(dateString);
+
+  // Si ya viene como "YYYY-MM-DD" (o "YYYY-MM-DDTHH:mm:ss..."), parsear manualmente
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, y, m, d] = match;
+    return `${d}/${m}/${y}`;   // "30/05/2026"
+  }
+
   try {
-    return new Date(dateString).toLocaleDateString('es-MX', {
+    return new Date(str).toLocaleDateString('es-MX', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
     });
   } catch {
-    return dateString;
+    return str;
   }
 };
 
