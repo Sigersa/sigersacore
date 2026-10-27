@@ -107,7 +107,6 @@ async function uploadFileToUploadThing(fileBuffer: ArrayBuffer, fileName: string
   }
 }
 
-// ✅ CORREGIDO: Recibe la URL base para no usar localhost
 async function generateFT_RH_02_PDF(empleadoId: string, baseUrl: string): Promise<ArrayBuffer> {
   try {
     const pdfUrl = `${baseUrl}/api/download/pdf/FT-RH-02?empleadoId=${empleadoId}&preview=1`;
@@ -120,7 +119,6 @@ async function generateFT_RH_02_PDF(empleadoId: string, baseUrl: string): Promis
   }
 }
 
-// ✅ CORREGIDO: Recibe la URL base para no usar localhost
 async function generateFT_RH_04_PDF(empleadoId: string, baseUrl: string): Promise<ArrayBuffer> {
   try {
     const pdfUrl = `${baseUrl}/api/download/pdf/FT-RH-04?empleadoId=${empleadoId}&preview=1`;
@@ -133,7 +131,6 @@ async function generateFT_RH_04_PDF(empleadoId: string, baseUrl: string): Promis
   }
 }
 
-// ✅ CORREGIDO: Recibe la URL base para no usar localhost
 async function generateFT_RH_07_PDF(empleadoId: string, baseUrl: string): Promise<ArrayBuffer> {
   try {
     const pdfUrl = `${baseUrl}/api/download/pdf/FT-RH-07?empleadoId=${empleadoId}&preview=1`;
@@ -146,7 +143,6 @@ async function generateFT_RH_07_PDF(empleadoId: string, baseUrl: string): Promis
   }
 }
 
-// ✅ CORREGIDO: Recibe la URL base para no usar localhost
 async function generateFT_RH_29_PDF(empleadoId: string, baseUrl: string): Promise<ArrayBuffer> {
   try {
     const pdfUrl = `${baseUrl}/api/download/pdf/FT-RH-29?empleadoId=${empleadoId}&preview=1`;
