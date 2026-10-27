@@ -274,12 +274,24 @@ const toUpperCaseWithAccents = (text: string): string => {
 
 const formatDateForInput = (dateString?: string): string => {
   if (!dateString) return '';
+  
+  const str = String(dateString);
+
+  // Si ya viene como "YYYY-MM-DD..." (con o sin hora), lo cortamos directo
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return `${match[1]}-${match[2]}-${match[3]}`; // YYYY-MM-DD, listo para el input date
+  }
+
+  // Si viene en otro formato (ej. "2026/05/30" o con hora), parsearlo cuidadosamente
   try {
-    const date = new Date(dateString);
+    const date = new Date(str);
     if (isNaN(date.getTime())) return '';
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    
+    // Usar los métodos UTC para no desplazar el día por zona horaria
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   } catch {
     return '';
