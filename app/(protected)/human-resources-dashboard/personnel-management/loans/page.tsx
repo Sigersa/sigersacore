@@ -98,7 +98,9 @@ const formatDate = (dateString: string): string => {
   // Fallback por si algún día llega otro formato
   try {
     return new Date(str).toLocaleDateString('es-MX', {
-      year: 'numeric', month: '2-digit', day: '2-digit'
+      year: 'numeric', 
+      month: '2-digit', 
+      day: '2-digit'
     });
   } catch {
     return str;
