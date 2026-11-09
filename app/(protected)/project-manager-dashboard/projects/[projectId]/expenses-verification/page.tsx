@@ -114,7 +114,7 @@ export default function ExpensesVerificationPage({ params }: PageProps) {
     </Suspense>
   );
 }
-
+ 
 // ============ CONTENIDO PRINCIPAL ============
 
 function ExpensesVerificationContent({ params }: PageProps) {
@@ -390,7 +390,6 @@ function ExpensesVerificationContent({ params }: PageProps) {
           {/* Panel Principal */}
           <div className="bg-white rounded-lg shadow border border-gray-300 overflow-hidden">
             <div className="p-6">
-              {/* 👇 CORREGIDO: condición y render seguros */}
               {hasProjectInfo && (
                 <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-300">
                   <h3 className="font-bold text-gray-800 mb-3 text-sm uppercase border-b border-gray-200 pb-2">
