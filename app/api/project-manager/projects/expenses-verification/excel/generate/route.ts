@@ -53,9 +53,24 @@ function safeMergeCoords(sheet: ExcelJS.Worksheet, sr: number, sc: number, er: n
 
 const formatDDMMYYYY = (d?: string | Date) => {
   if (!d) return "";
-  const date = new Date(d);
-  if (isNaN(date.getTime())) return String(d);
-  return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
+
+  // Si ya es un Date, usar UTC para evitar desfase
+  if (d instanceof Date) {
+    if (isNaN(d.getTime())) return "";
+    return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
+  }
+
+  // Si es string YYYY-MM-DD (lo que envía <input type="date">), parsear sin timezone
+  const s = String(d).trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    return `${m[3]}/${m[2]}/${m[1]}`;
+  }
+
+  // Fallback: otros formatos → usar UTC
+  const date = new Date(s);
+  if (isNaN(date.getTime())) return s;
+  return `${String(date.getUTCDate()).padStart(2, "0")}/${String(date.getUTCMonth() + 1).padStart(2, "0")}/${date.getUTCFullYear()}`;
 };
 
 // Función para limpiar completamente una fila
@@ -307,10 +322,22 @@ export async function POST(req: Request) {
         source: "installationmaterials",
       },
       {
-        sql: `SELECT Beneficiary, Observations, Date, Total FROM loans WHERE Date BETWEEN ? AND ? AND ProjectID = ? AND MethodID = 3`,
-        params: [startDate, endDate, numericProjectId],
+        sql: `SELECT 
+                CONCAT_WS(' ', pp.FirstName, pp.LastName, pp.MiddleName) AS Beneficiary, 
+                l.Observations, 
+                l.Date, 
+                l.Total 
+              FROM loans l 
+              INNER JOIN projectpersonnel pp 
+                ON pp.ProjectPersonnelID = l.ProjectPersonnelID 
+              LEFT JOIN projects pr 
+                ON pr.ProjectID = l.ProjectID
+              LEFT JOIN paymentmethods pm 
+                ON pm.MethodID = l.MethodID
+              WHERE l.Date BETWEEN ? AND ? AND pr.ProjectID = (SELECT PROJECTID FROM projects WHERE NameProject = ?) AND pm.MethodID = 3`,
+        params: [startDate, endDate, projectName],
         source: "loans",
-      },
+      }, 
       {
         sql: `SELECT Liters, LitersCost, Observations, Date, Total FROM fuelclient WHERE Date BETWEEN ? AND ? AND ProjectID = ? AND MethodID = 3`,
         params: [startDate, endDate, numericProjectId],
@@ -340,10 +367,21 @@ export async function POST(req: Request) {
         sql: `SELECT Concept, Date, Total FROM outsourcedservices WHERE Date BETWEEN ? AND ? AND ProjectID = ? AND MethodID = 3`,
         params: [startDate, endDate, numericProjectId],
         source: "outsourcedservices",
-      },
+      }, 
       {
-        sql: `SELECT Concept, Date, Total FROM payroll WHERE Date BETWEEN ? AND ? AND ProjectID = ? AND MethodID = 3`,
-        params: [startDate, endDate, numericProjectId],
+        sql: `SELECT 
+                CONCAT('SEMANA: ', pp.WeekNumber) AS Concept, 
+                p.Date, 
+                p.Total 
+              FROM payroll p
+              INNER JOIN payroll_periods pp 
+                ON pp.PayrollPeriodID = p.PayrollPeriodID
+              LEFT JOIN projects pr 
+                ON pr.ProjectID = p.ProjectID
+              LEFT JOIN paymentmethods pm
+                ON pm.MethodID = p.MethodID
+              WHERE p.Date BETWEEN ? AND ? AND pr.ProjectID = (SELECT ProjectID FROM projects WHERE NameProject = ?) AND pm.MethodID = 3`,
+        params: [startDate, endDate, projectName],
         source: "payroll",
       },
       {
