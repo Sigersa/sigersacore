@@ -10,7 +10,8 @@ import * as XLSX from 'xlsx';
 // Interface de empleados
 type Employee = {
   EmployeeID: number;
-  BasePersonnelID: number;
+  BasePersonnelID?: number;
+  ProjectPersonnelID?: number;
   FirstName: string;
   LastName: string;
   MiddleName: string;
@@ -18,6 +19,9 @@ type Employee = {
   ContractStartDate: string;
   YearsOfSeniority: number;
   DaysOfVacations: number;
+  TotalUsedDays: number;
+  RemainingDays: number;
+  tipo?: 'BASE' | 'PROJECT';
 };
 
 // Interface para vacaciones
@@ -57,12 +61,8 @@ interface SuccessDetails {
   completedVacations: boolean;
 }
 
-// Función para normalizar texto a mayúsculas
-const normalizarMayusculas = (texto: string): string => {
-  return texto.toUpperCase();
-};
+const normalizarMayusculas = (texto: string): string => texto.toUpperCase();
 
-// Función para formatear fecha
 const formatDate = (dateString: string): string => {
   try {
     if (!dateString) return 'N/A';
@@ -76,7 +76,6 @@ const formatDate = (dateString: string): string => {
   }
 };
 
-// Función para formatear fecha para input date
 const formatDateForInput = (dateString: string): string => {
   if (!dateString) return '';
   try {
@@ -88,19 +87,11 @@ const formatDateForInput = (dateString: string): string => {
   }
 };
 
-// Función para descargar el documento PDF desde la URL almacenada
 const downloadVacationPDF = async (fileUrl: string, fileName: string) => {
   try {
-    if (!fileUrl) {
-      throw new Error('No hay URL de PDF disponible');
-    }
-    
+    if (!fileUrl) throw new Error('No hay URL de PDF disponible');
     const response = await fetch(fileUrl);
-    
-    if (!response.ok) {
-      throw new Error('Error al descargar el PDF');
-    }
-    
+    if (!response.ok) throw new Error('Error al descargar el PDF');
     const blob = await response.blob();
     const downloadUrl = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -116,21 +107,15 @@ const downloadVacationPDF = async (fileUrl: string, fileName: string) => {
   }
 };
 
-// Función para descargar el documento Word FT-RH-08
 const downloadVacationWord = async (employeeId: number, vacationId?: number) => {
   try {
     let url = `/api/download/edit/FT-RH-08?empleadoId=${employeeId}`;
-    if (vacationId) {
-      url += `&vacationId=${vacationId}`;
-    }
-    
+    if (vacationId) url += `&vacationId=${vacationId}`;
     const response = await fetch(url);
-    
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.error || 'Error al descargar el documento Word');
     }
-    
     const blob = await response.blob();
     const downloadUrl = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -150,13 +135,11 @@ export default function SystemAdminDashboard() {
   const { user, loading: sessionLoading } = useSessionManager();
   useInactivityManager();
   
-  // Referencias
   const employeeIdInputRef = useRef<HTMLInputElement>(null);
   
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
 
-  // Estados para el formulario
   const [formData, setFormData] = useState({
     EmployeeID: '',
     Days: '',
@@ -165,7 +148,6 @@ export default function SystemAdminDashboard() {
     Observations: ''
   });
 
-  // Estados para fecha de término calculada
   const [calculatedEndDate, setCalculatedEndDate] = useState<string>('');
   const [calculatedEndDateValue, setCalculatedEndDateValue] = useState<string>('');
   const [selectedEmployeeSeniority, setSelectedEmployeeSeniority] = useState<{
@@ -173,14 +155,12 @@ export default function SystemAdminDashboard() {
     days: number;
   } | null>(null);
 
-  // Agregar un estado para el término de búsqueda general
   const [modalsearchTerm, modalSetSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<EmployeeSearchResult[]>([]);
   const [showResults, setShowResults] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Estados para operaciones
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -188,14 +168,12 @@ export default function SystemAdminDashboard() {
   const [errorMessage, setErrorMessage] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<{ show: boolean; id: number | null }>({ show: false, id: null });
   
-  // Estados para búsqueda de empleados por ID
   const [employeeIdInput, setEmployeeIdInput] = useState('');
   const [searchingEmployee, setSearchingEmployee] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeSearchResult | null>(null);
   const [selectedEmployeeData, setSelectedEmployeeData] = useState<EmployeeSearchResult | null>(null);
   const [employeeNotFound, setEmployeeNotFound] = useState(false);
 
-  // Estados para vacaciones
   const [showVacationsModal, setShowVacationsModal] = useState(false);
   const [selectedVacationsEmployee, setSelectedVacationsEmployee] = useState<Employee | null>(null);
   const [vacationRecords, setVacationRecords] = useState<VacationRecord[]>([]);
@@ -204,28 +182,23 @@ export default function SystemAdminDashboard() {
   const [editObservationValue, setEditObservationValue] = useState('');
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
 
-  // Estados para paginación
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
 
-  // Estados
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
   const [saving, setSaving] = useState(false);
   const [currentEditRecord, setCurrentEditRecord] = useState<VacationRecord | null>(null);
 
-  // Estado para días totales usados
   const [totalUsedDays, setTotalUsedDays] = useState<number>(0);
   
-  // Estado para el modal de éxito con vista previa del PDF
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successDetails, setSuccessDetails] = useState<SuccessDetails | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   
-  // Estado para mostrar opciones de descarga
   const [showDownloadOptions, setShowDownloadOptions] = useState<{ show: boolean; fileUrl: string; vacationId: number; employeeId: number }>({
     show: false,
     fileUrl: '',
@@ -243,11 +216,7 @@ export default function SystemAdminDashboard() {
         const formattedEndDate = endDate.toISOString().split('T')[0];
         setCalculatedEndDateValue(formattedEndDate);
         setCalculatedEndDate(formatDate(endDate.toISOString()));
-        
-        setFormData(prev => ({
-          ...prev,
-          EndDate: formattedEndDate
-        }));
+        setFormData(prev => ({ ...prev, EndDate: formattedEndDate }));
       } else {
         setCalculatedEndDateValue('');
         setCalculatedEndDate('');
@@ -258,14 +227,10 @@ export default function SystemAdminDashboard() {
     }
   }, [formData.Days, formData.StartDate]);
 
-  // Cargar empleados al montar el componente
   useEffect(() => {
-    if (user) {
-      fetchEmployees();
-    }
+    if (user) fetchEmployees();
   }, [user]);
 
-  // Filtrar empleados cuando cambia el término de búsqueda
   useEffect(() => {
     if (searchTerm.trim() === '') {
       setFilteredEmployees(employees);
@@ -280,19 +245,16 @@ export default function SystemAdminDashboard() {
     }
   }, [searchTerm, employees]);
 
-  // Actualizar páginas cuando cambien los registros filtrados
   useEffect(() => {
     setTotalPages(Math.ceil(filteredEmployees.length / itemsPerPage));
     setCurrentPage(1);
   }, [filteredEmployees, itemsPerPage]);
 
-  // Obtener registros actuales de la página
   const currentEmployees = filteredEmployees.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
 
-  // Mostrar loading mientras se verifica la sesión
   if (sessionLoading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
@@ -304,18 +266,14 @@ export default function SystemAdminDashboard() {
     );
   }
 
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
-  // Función para exportar empleados y sus períodos de vacaciones a Excel
   const exportEmployeesWithVacationsToExcel = async () => {
     try {
       setLoading(true);
       const excelData = [];
       
       for (const employee of filteredEmployees) {
-        // Obtener períodos de vacaciones para este empleado
         const vacationsResponse = await fetch(`/api/human-resources-dashboard/employee-management/employeevacations?action=get&employeeId=${employee.EmployeeID}`, {
           method: 'PUT'
         });
@@ -326,14 +284,16 @@ export default function SystemAdminDashboard() {
         }
         
         if (vacationPeriods.length === 0) {
-          // Si no tiene períodos, agregar una fila con los datos del empleado y campos de vacaciones vacíos
           excelData.push({
             'ID EMPLEADO': employee.EmployeeID,
             'NOMBRE COMPLETO': `${employee.FirstName} ${employee.LastName} ${employee.MiddleName || ''}`.trim(),
+            'TIPO': employee.tipo || 'BASE',
             'PUESTO': employee.Position,
             'FECHA DE INGRESO': formatDate(employee.ContractStartDate),
             'AÑOS DE ANTIGÜEDAD': employee.YearsOfSeniority,
-            'DÍAS DE VACACIONES DISPONIBLES': employee.DaysOfVacations,
+            'DÍAS DISPONIBLES': employee.DaysOfVacations,
+            'DÍAS USADOS': employee.TotalUsedDays,
+            'DÍAS RESTANTES': employee.RemainingDays,
             'ID PERÍODO VACACIONES': '',
             'FECHA INICIO VACACIONES': '',
             'FECHA FIN VACACIONES': '',
@@ -342,15 +302,17 @@ export default function SystemAdminDashboard() {
             'OBSERVACIONES VACACIONES': ''
           });
         } else {
-          // Agregar una fila por cada período de vacaciones
           vacationPeriods.forEach(period => {
             excelData.push({
               'ID EMPLEADO': employee.EmployeeID,
               'NOMBRE COMPLETO': `${employee.FirstName} ${employee.LastName} ${employee.MiddleName || ''}`.trim(),
+              'TIPO': employee.tipo || 'BASE',
               'PUESTO': employee.Position,
               'FECHA DE INGRESO': formatDate(employee.ContractStartDate),
               'AÑOS DE ANTIGÜEDAD': employee.YearsOfSeniority,
-              'DÍAS DE VACACIONES DISPONIBLES': employee.DaysOfVacations,
+              'DÍAS DISPONIBLES': employee.DaysOfVacations,
+              'DÍAS USADOS': employee.TotalUsedDays,
+              'DÍAS RESTANTES': employee.RemainingDays,
               'ID PERÍODO VACACIONES': period.VacationID,
               'FECHA INICIO VACACIONES': formatDate(period.StartDate),
               'FECHA FIN VACACIONES': formatDate(period.EndDate),
@@ -362,17 +324,17 @@ export default function SystemAdminDashboard() {
         }
       }
 
-      // Crear hoja de trabajo
       const ws = XLSX.utils.json_to_sheet(excelData);
-      
-      // Ajustar anchos de columnas
-      const colWidths = [
+      ws['!cols'] = [
         { wch: 12 }, // ID EMPLEADO
         { wch: 35 }, // NOMBRE COMPLETO
+        { wch: 10 }, // TIPO
         { wch: 30 }, // PUESTO
         { wch: 15 }, // FECHA DE INGRESO
         { wch: 18 }, // AÑOS DE ANTIGÜEDAD
-        { wch: 25 }, // DÍAS DE VACACIONES DISPONIBLES
+        { wch: 16 }, // DÍAS DISPONIBLES
+        { wch: 12 }, // DÍAS USADOS
+        { wch: 14 }, // DÍAS RESTANTES
         { wch: 18 }, // ID PERÍODO VACACIONES
         { wch: 18 }, // FECHA INICIO VACACIONES
         { wch: 18 }, // FECHA FIN VACACIONES
@@ -380,13 +342,9 @@ export default function SystemAdminDashboard() {
         { wch: 15 }, // DÍAS COMPUTADOS
         { wch: 40 }  // OBSERVACIONES VACACIONES
       ];
-      ws['!cols'] = colWidths;
 
-      // Crear libro de trabajo
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'EMPLEADOS_Y_VACACIONES');
-
-      // Generar y descargar archivo
       const fileName = `EMPLEADOS_VACACIONES_COMPLETO_${new Date().toISOString().split('T')[0]}.xlsx`;
       XLSX.writeFile(wb, fileName);
       
@@ -401,12 +359,10 @@ export default function SystemAdminDashboard() {
     }
   };
 
-  // Función para exportar períodos de vacaciones a Excel (mantener la original)
   const exportVacationsToExcel = () => {
     try {
       if (!selectedVacationsEmployee) return;
 
-      // Preparar datos para Excel
       const excelData = vacationRecords.map(record => ({
         'ID PERÍODO': record.VacationID,
         'ID EMPLEADO': record.EmployeeID,
@@ -418,27 +374,14 @@ export default function SystemAdminDashboard() {
         'OBSERVACIONES': record.Observations || 'N/A'
       }));
 
-      // Crear hoja de trabajo
       const ws = XLSX.utils.json_to_sheet(excelData);
-      
-      // Ajustar anchos de columnas
-      const colWidths = [
-        { wch: 12 }, // ID PERÍODO
-        { wch: 12 }, // ID EMPLEADO
-        { wch: 35 }, // EMPLEADO
-        { wch: 15 }, // FECHA INICIO
-        { wch: 15 }, // FECHA FIN
-        { wch: 10 }, // DÍAS
-        { wch: 15 }, // DÍAS COMPUTADOS
-        { wch: 40 }  // OBSERVACIONES
+      ws['!cols'] = [
+        { wch: 12 }, { wch: 12 }, { wch: 35 }, { wch: 15 }, { wch: 15 },
+        { wch: 10 }, { wch: 15 }, { wch: 40 }
       ];
-      ws['!cols'] = colWidths;
 
-      // Crear libro de trabajo
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, `VACACIONES_${selectedVacationsEmployee.EmployeeID}`);
-
-      // Generar y descargar archivo
       const fileName = `VACACIONES_EMP_${selectedVacationsEmployee.EmployeeID}_${new Date().toISOString().split('T')[0]}.xlsx`;
       XLSX.writeFile(wb, fileName);
       
@@ -451,7 +394,6 @@ export default function SystemAdminDashboard() {
     }
   };
 
-  // Función para buscar empleado por termino
   const searchEmployeeByTerm = async (term: string) => {
     try {
       setSearchingEmployee(true);
@@ -464,24 +406,24 @@ export default function SystemAdminDashboard() {
         const data = await response.json();
 
         if (/^\d+$/.test(term)) {
-        const employee = data.employees?.find((emp: EmployeeSearchResult) => 
-          emp.EmployeeID.toString() === term
-        );
-        if (employee) {
-          selectEmployee(employee);
-          return;
+          const employee = data.employees?.find((emp: EmployeeSearchResult) => 
+            emp.EmployeeID.toString() === term
+          );
+          if (employee) {
+            await selectEmployee(employee);
+            return;
+          }
+        }
+
+        if (data.employees && data.employees.length > 0) {
+          setSearchResults(data.employees);
+          setShowResults(true);
+          setEmployeeNotFound(false);
+        } else {
+          setEmployeeNotFound(true);
+          setError('NO SE ENCONTRÓ UN EMPLEADO');
         }
       }
-
-      if (data.employees && data.employees.length > 0) {
-        setSearchResults(data.employees);
-        setShowResults(true);
-        setEmployeeNotFound(false);
-      } else {
-        setEmployeeNotFound(true);
-        setError('NO SE ENCONTRÓ UN EMPLEADO');
-      }
-    }
     } catch (error) {
       console.error('Error al buscar empleado:', error);
       setError('ERROR DE CONEXIÓN AL BUSCAR EMPLEADO');
@@ -490,8 +432,8 @@ export default function SystemAdminDashboard() {
     }
   };
 
-  // Función auxiliar para seleccionar empleado
-  const selectEmployee = (employee: EmployeeSearchResult) => {
+  // Ahora es async y carga antigüedad + días usados
+  const selectEmployee = async (employee: EmployeeSearchResult) => {
     setSelectedEmployee(employee);
     setSelectedEmployeeData(employee);
     setEmployeeIdInput(employee.EmployeeID.toString());
@@ -503,30 +445,53 @@ export default function SystemAdminDashboard() {
     setShowResults(false);
     setSearchResults([]);
     setEmployeeNotFound(false);
+
+    // Cargar antigüedad y días usados
+    await fetchEmployeeSeniority(employee.EmployeeID);
+    await fetchTotalUsedDays(employee.EmployeeID);
   };
 
-  // Función para obtener la antigüedad del empleado
+  // Usa endpoint 'seniority' del backend si no está en local
   const fetchEmployeeSeniority = async (employeeId: number) => {
     try {
-      const response = await fetch(`/api/human-resources-dashboard/employee-management/employeevacations?action=get&employeeId=${employeeId}`, {
-        method: 'PUT'
-      });
-      
+      // 1. Buscar en el estado local
+      const localEmployee = employees.find(emp => emp.EmployeeID === employeeId);
+
+      if (localEmployee && localEmployee.DaysOfVacations != null && localEmployee.YearsOfSeniority != null) {
+        setSelectedEmployeeSeniority({
+          years: localEmployee.YearsOfSeniority,
+          days: localEmployee.DaysOfVacations
+        });
+        return;
+      }
+
+      // 2. Si no está en local, consultar al backend
+      const response = await fetch(
+        `/api/human-resources-dashboard/employee-management/employeevacations?action=seniority&employeeId=${employeeId}`,
+        { method: 'PUT' }
+      );
+
       if (response.ok) {
-        const employeeData = employees.find(emp => emp.EmployeeID === employeeId);
-        if (employeeData) {
-          setSelectedEmployeeSeniority({
-            years: employeeData.YearsOfSeniority,
-            days: employeeData.DaysOfVacations
-          });
-        }
+        const data = await response.json();
+        setSelectedEmployeeSeniority({
+          years: data.yearsOfSeniority ?? 0,
+          days: data.daysOfVacations ?? 0
+        });
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        console.error('Error seniority:', errData);
+        setSelectedEmployeeSeniority({ years: 0, days: 0 });
+        setErrorMessage(errData.error || 'NO SE PUDO OBTENER LA ANTIGÜEDAD DEL EMPLEADO');
+        setTimeout(() => setErrorMessage(''), 4000);
       }
     } catch (error) {
       console.error('Error fetching employee seniority:', error);
+      setSelectedEmployeeSeniority({ years: 0, days: 0 });
+      setErrorMessage('ERROR AL OBTENER LA ANTIGÜEDAD DEL EMPLEADO');
+      setTimeout(() => setErrorMessage(''), 4000);
     }
   };
 
-  // Función para obtener los días totales usados en vacaciones
   const fetchTotalUsedDays = async (employeeId: number) => {
     try {
       const response = await fetch(`/api/human-resources-dashboard/employee-management/employeevacations?action=get&employeeId=${employeeId}`, {
@@ -537,13 +502,15 @@ export default function SystemAdminDashboard() {
         const vacations = await response.json();
         const totalUsed = vacations.reduce((sum: number, record: VacationRecord) => sum + record.Days, 0);
         setTotalUsedDays(totalUsed);
+      } else {
+        setTotalUsedDays(0);
       }
     } catch (error) {
       console.error('Error fetching total used days:', error);
+      setTotalUsedDays(0);
     }
   };
 
-  // Función para limpiar la búsqueda de empleados
   const clearEmployeeSearch = () => {
     setEmployeeIdInput('');
     setSearchTerm('');
@@ -553,18 +520,12 @@ export default function SystemAdminDashboard() {
     setSelectedEmployeeData(null);
     setSelectedEmployeeSeniority(null);
     setTotalUsedDays(0);
-    setFormData(prev => ({
-      ...prev,
-      EmployeeID: ''
-    }));
+    setFormData(prev => ({ ...prev, EmployeeID: '' }));
     setEmployeeNotFound(false);
     setError('');
-    if (employeeIdInputRef.current) {
-      employeeIdInputRef.current.focus();
-    }
+    if (employeeIdInputRef.current) employeeIdInputRef.current.focus();
   };
 
-  // Función para cargar empleados
   const fetchEmployees = async () => {
     setLoading(true);
     try {
@@ -584,7 +545,6 @@ export default function SystemAdminDashboard() {
     }
   };
 
-  // Función para obtener vacaciones de un empleado
   const fetchVacationRecords = async (employeeId: number) => {
     setLoadingVacations(true);
     try {
@@ -608,7 +568,6 @@ export default function SystemAdminDashboard() {
     }
   };
 
-  // Función para descargar documento PDF desde URL almacenada
   const handleDownloadPDF = async (fileUrl: string, employeeId: number, vacationId: number) => {
     setDownloading(true);
     try {
@@ -624,7 +583,6 @@ export default function SystemAdminDashboard() {
     }
   };
 
-  // Función para descargar documento Word
   const handleDownloadWord = async (employeeId: number, vacationId: number) => {
     setDownloading(true);
     try {
@@ -640,17 +598,14 @@ export default function SystemAdminDashboard() {
     }
   };
 
-  // Función para manejar el clic en eliminar
   const handleDeleteClick = (vacationId: number) => {
     setShowVacationsModal(false);
-    
     setTimeout(() => {
       setPendingDeleteId(vacationId);
       setConfirmDelete({ show: true, id: vacationId });
     }, 100);
   };
 
-  // Función para editar registro completo
   const handleEditVacationRecord = async (record: VacationRecord) => {
     setShowVacationsModal(false);
     
@@ -691,58 +646,55 @@ export default function SystemAdminDashboard() {
     }, 100);
   };
 
-  // Manejar cambios en el formulario
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     
     if (name === 'Days') {
       if (value === '' || /^\d*\.?\d*$/.test(value)) {
-        setFormData(prev => ({
-          ...prev,
-          [name]: value
-        }));
+        setFormData(prev => ({ ...prev, [name]: value }));
       }
-    } else if (name === 'Observations') {
-      setFormData(prev => ({
-        ...prev,
-        [name]: normalizarMayusculas(value)
-      }));
     } else {
-      setFormData(prev => ({
-        ...prev,
-        [name]: normalizarMayusculas(value)
-      }));
+      setFormData(prev => ({ ...prev, [name]: normalizarMayusculas(value) }));
     }
   };
 
-  // Manejar cambios en la fecha de inicio
   const handleStartDateChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const { value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      StartDate: value
-    }));
+    setFormData(prev => ({ ...prev, StartDate: e.target.value }));
   };
 
-  // Función para validar días disponibles
+  // Valida que exista selectedEmployeeSeniority y que tenga días > 0
   const validateAvailableDays = (daysToTake: number): boolean => {
+    if (!selectedEmployeeSeniority) {
+      setErrorMessage('NO SE HA CARGADO LA ANTIGÜEDAD DEL EMPLEADO. ESPERE UN MOMENTO O VUELVA A SELECCIONARLO.');
+      return false;
+    }
+
+    // ✅ Si la antigüedad es 0 → 0 días disponibles → no puede tomar vacaciones
+    if (selectedEmployeeSeniority.years <= 0 || selectedEmployeeSeniority.days <= 0) {
+      setErrorMessage('EL EMPLEADO NO TIENE DÍAS DE VACACIONES DISPONIBLES. LA ANTIGÜEDAD DEBE SER DE AL MENOS 1 AÑO.');
+      return false;
+    }
+
     if (modalMode === 'create') {
       const totalAfterAddition = totalUsedDays + daysToTake;
-      if (totalAfterAddition > (selectedEmployeeSeniority?.days || 0)) {
-        setErrorMessage(`NO SE PUEDE AGREGAR EL PERÍODO. EL TOTAL DE DÍAS USADOS SERÍA ${totalAfterAddition} DE ${selectedEmployeeSeniority?.days} DÍAS DISPONIBLES. DÍAS RESTANTES: ${(selectedEmployeeSeniority?.days || 0) - totalUsedDays}`);
+      if (totalAfterAddition > selectedEmployeeSeniority.days) {
+        setErrorMessage(
+          `NO SE PUEDE AGREGAR EL PERÍODO. EL TOTAL DE DÍAS USADOS SERÍA ${totalAfterAddition} DE ${selectedEmployeeSeniority.days} DÍAS DISPONIBLES. DÍAS RESTANTES: ${selectedEmployeeSeniority.days - totalUsedDays}`
+        );
         return false;
       }
     } else if (modalMode === 'edit' && currentEditRecord) {
       const totalAfterUpdate = (totalUsedDays - currentEditRecord.Days) + daysToTake;
-      if (totalAfterUpdate > (selectedEmployeeSeniority?.days || 0)) {
-        setErrorMessage(`NO SE PUEDE ACTUALIZAR EL PERÍODO. EL TOTAL DE DÍAS USADOS SERÍA ${totalAfterUpdate} DE ${selectedEmployeeSeniority?.days} DÍAS DISPONIBLES. DÍAS RESTANTES: ${(selectedEmployeeSeniority?.days || 0) - (totalUsedDays - currentEditRecord.Days)}`);
+      if (totalAfterUpdate > selectedEmployeeSeniority.days) {
+        setErrorMessage(
+          `NO SE PUEDE ACTUALIZAR EL PERÍODO. EL TOTAL DE DÍAS USADOS SERÍA ${totalAfterUpdate} DE ${selectedEmployeeSeniority.days} DÍAS DISPONIBLES. DÍAS RESTANTES: ${selectedEmployeeSeniority.days - (totalUsedDays - currentEditRecord.Days)}`
+        );
         return false;
       }
     }
     return true;
   };
 
-  // Manejar envío del formulario (crear o editar)
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSuccessMessage('');
@@ -757,6 +709,19 @@ export default function SystemAdminDashboard() {
 
     if (!formData.Days || !formData.StartDate) {
       setErrorMessage('POR FAVOR, COMPLETE TODOS LOS CAMPOS REQUERIDOS');
+      setSaving(false);
+      return;
+    }
+
+    if (!selectedEmployeeSeniority) {
+      setErrorMessage('NO SE HA CARGADO LA ANTIGÜEDAD DEL EMPLEADO. INTENTE NUEVAMENTE.');
+      setSaving(false);
+      return;
+    }
+
+    // ✅ Validación temprana: si antigüedad 0 → no permitir
+    if (selectedEmployeeSeniority.years <= 0 || selectedEmployeeSeniority.days <= 0) {
+      setErrorMessage('EL EMPLEADO NO TIENE DÍAS DE VACACIONES DISPONIBLES. LA ANTIGÜEDAD DEBE SER DE AL MENOS 1 AÑO.');
       setSaving(false);
       return;
     }
@@ -797,9 +762,7 @@ export default function SystemAdminDashboard() {
 
       const response = await fetch(url, {
         method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
 
@@ -809,7 +772,6 @@ export default function SystemAdminDashboard() {
         if (modalMode === 'create') {
           setSuccessMessage('¡PERÍODO DE VACACIONES CREADO EXITOSAMENTE!');
           
-          // Mostrar modal de éxito con vista previa usando las fechas del backend
           if (result.vacationId && selectedEmployeeData) {
             const employeeName = `${selectedEmployeeData.FirstName} ${selectedEmployeeData.LastName} ${selectedEmployeeData.MiddleName || ''}`.trim();
             setSuccessDetails({
@@ -828,7 +790,6 @@ export default function SystemAdminDashboard() {
         } else {
           setSuccessMessage('¡PERÍODO DE VACACIONES ACTUALIZADO EXITOSAMENTE!');
           
-          // Para edición, mostrar modal con las fechas del backend
           if (selectedEmployeeData) {
             const employeeName = `${selectedEmployeeData.FirstName} ${selectedEmployeeData.LastName} ${selectedEmployeeData.MiddleName || ''}`.trim();
             setSuccessDetails({
@@ -872,14 +833,12 @@ export default function SystemAdminDashboard() {
     }
   };
 
-  // Ver vacaciones del empleado
   const handleViewVacations = async (employee: Employee) => {
     setSelectedVacationsEmployee(employee);
     setShowVacationsModal(true);
     await fetchVacationRecords(employee.EmployeeID);
   };
 
-  // Eliminar período de vacaciones
   const handleDeleteVacation = async (vacationId: number) => {
     setLoading(true);
     try {
@@ -908,14 +867,11 @@ export default function SystemAdminDashboard() {
       setPendingDeleteId(null);
       
       if (selectedVacationsEmployee) {
-        setTimeout(() => {
-          setShowVacationsModal(true);
-        }, 100);
+        setTimeout(() => { setShowVacationsModal(true); }, 100);
       }
     }
   };
 
-  // Resetear formulario
   const resetForm = () => {
     setFormData({
       EmployeeID: '',
@@ -941,25 +897,18 @@ export default function SystemAdminDashboard() {
     setCurrentEditRecord(null);
 
     setTimeout(() => {
-      if (employeeIdInputRef.current) {
-        employeeIdInputRef.current.focus();
-      }
+      if (employeeIdInputRef.current) employeeIdInputRef.current.focus();
     }, 100);
   };
 
-  // Limpiar filtros
-  const clearFilters = () => {
-    setSearchTerm('');
-  };
+  const clearFilters = () => setSearchTerm('');
 
-  // Abrir modal para nuevo período
   const openCreateModal = () => {
     resetForm();
     setModalMode('create');
     setShowModal(true);
   };
 
-  // Cerrar modal
   const closeModal = () => {
     setShowModal(false);
     setSelectedEmployeeData(null);
@@ -973,7 +922,6 @@ export default function SystemAdminDashboard() {
     resetForm();
   };
 
-  // Cerrar modal de vacaciones
   const closeVacationsModal = () => {
     setShowVacationsModal(false);
     setSelectedVacationsEmployee(null);
@@ -984,38 +932,35 @@ export default function SystemAdminDashboard() {
     setPendingDeleteId(null);
   };
 
-  // Cerrar modal de confirmación
   const closeConfirmDelete = () => {
     setConfirmDelete({ show: false, id: null });
     setPendingDeleteId(null);
-    
     if (selectedVacationsEmployee) {
-      setTimeout(() => {
-        setShowVacationsModal(true);
-      }, 100);
+      setTimeout(() => { setShowVacationsModal(true); }, 100);
     }
   };
 
-  // Cerrar modal de opciones de descarga
   const closeDownloadOptions = () => {
     setShowDownloadOptions({ show: false, fileUrl: '', vacationId: 0, employeeId: 0 });
   };
 
-  // Cerrar modal de éxito
   const closeSuccessModal = () => {
     setShowSuccessModal(false);
     setSuccessDetails(null);
     setPdfLoading(false);
   };
 
-  const getUniqueKey = (employee: Employee, index: number) => {
-    return `${employee.EmployeeID}-${index}`;
-  };
+  const getUniqueKey = (employee: Employee, index: number) => `${employee.EmployeeID}-${index}-${employee.tipo || 'BASE'}`;
 
   // Calcular días restantes
   const remainingDays = selectedEmployeeSeniority 
     ? selectedEmployeeSeniority.days - totalUsedDays 
     : 0;
+
+  // ✅ Indica si el empleado puede tomar vacaciones
+  const canTakeVacations = selectedEmployeeSeniority !== null 
+    && selectedEmployeeSeniority.years > 0 
+    && selectedEmployeeSeniority.days > 0;
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -1050,7 +995,6 @@ export default function SystemAdminDashboard() {
             </div>
             
             <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-              {/* Columna izquierda - Detalles del Período */}
               <div className="w-full md:w-1/3 p-6 border-r border-gray-200 overflow-y-auto">
                 <div className="space-y-4">
                   <div className="bg-gray-50 rounded-lg p-4">
@@ -1078,22 +1022,12 @@ export default function SystemAdminDashboard() {
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="block text-xs font-bold text-gray-700 uppercase">FECHA DE INICIO:</span>
-                        <span className="text-gray-600 mt-1 text-sm">
-                          {successDetails.StartDate}
-                        </span>
+                        <span className="text-gray-600 mt-1 text-sm">{successDetails.StartDate}</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="block text-xs font-bold text-gray-700 uppercase">FECHA DE TÉRMINO:</span>
-                        <span className="text-gray-600 mt-1 text-sm">
-                          {successDetails.EndDate}
-                        </span>
+                        <span className="text-gray-600 mt-1 text-sm">{successDetails.EndDate}</span>
                       </div>
-                      {successDetails.completedVacations && (
-                        <div className="mt-2 p-2 bg-green-100 rounded-md border border-green-300">
-                          <p className="text-xs text-green-700 font-bold">✓ VACACIONES COMPLETADAS</p>
-                          <p className="text-xs text-green-600">Se ha generado el documento FT-RH-08</p>
-                        </div>
-                      )}
                     </div>
                   </div>
                   
@@ -1158,7 +1092,6 @@ export default function SystemAdminDashboard() {
                 </div>
               </div>
               
-              {/* Columna derecha - Vista previa del PDF */}
               <div className="flex-1 flex flex-col p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-bold text-gray-800 text-sm uppercase">
@@ -1192,14 +1125,12 @@ export default function SystemAdminDashboard() {
                       <div className="text-center">
                         {successDetails.completedVacations ? (
                           <>
-                            <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                            <p className="text-gray-600">No se pudo cargar la vista previa del PDF</p>
+                            <p className="text-xs text-gray-500 mt-2">No se pudo cargar la vista previa del PDF</p>
                             <p className="text-xs text-gray-500 mt-2">El PDF se generó pero no está disponible para vista previa</p>
                           </>
                         ) : (
                           <>
-                            <CheckCircle className="h-12 w-12 text-green-400 mx-auto mb-3" />
-                            <p className="text-gray-600">Período registrado correctamente</p>
+                            <p className="text-xs text-gray-500 mt-2">Período registrado correctamente</p>
                             <p className="text-xs text-gray-500 mt-2">
                               {successDetails.fileUrl ? 'El PDF se generó correctamente' : 'El PDF se generará al completar todas las vacaciones'}
                             </p>
@@ -1348,12 +1279,12 @@ export default function SystemAdminDashboard() {
                         )}
                       </div>
 
-                      {/* Lista de resultados cuando hay múltiples coincidencias */}
                       {showResults && searchResults.length > 0 && (
                         <div className="mt-2 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto z-20 relative">
                           {searchResults.map((emp) => (
                             <button
-                              key={emp.EmployeeID}
+                              key={`${emp.EmployeeID}-${emp.tipo}`}
+                              type="button"
                               onClick={() => selectEmployee(emp)}
                               className="w-full px-3 py-2 text-left hover:bg-gray-100 border-b border-gray-100 last:border-b-0"
                             >
@@ -1395,23 +1326,20 @@ export default function SystemAdminDashboard() {
                                 {`${selectedEmployeeData.FirstName} ${selectedEmployeeData.LastName} ${selectedEmployeeData.MiddleName || ''}`.trim()}
                               </span>
                             </div>
-
                             <div>
                               <span className="block text-xs font-bold text-gray-500 uppercase">ID del empleado</span>
                               <span className="text-sm text-gray-900">{selectedEmployeeData.EmployeeID}</span>
                             </div>
-
                             <div>
                               <span className="block text-xs font-bold text-gray-500 uppercase">Tipo</span>
                               <span className="text-sm text-gray-900">{selectedEmployeeData.tipo}</span>
                             </div>
-
                             <div>
                               <span className="block text-xs font-bold text-gray-500 uppercase">Puesto</span>
                               <span className="text-sm text-gray-900">{selectedEmployeeData.Position || 'N/A'}</span>
                             </div>
 
-                            {selectedEmployeeSeniority && (
+                            {selectedEmployeeSeniority ? (
                               <>
                                 <div>
                                   <span className="block text-xs font-bold text-gray-500 uppercase">Años de antigüedad</span>
@@ -1432,6 +1360,13 @@ export default function SystemAdminDashboard() {
                                   </span>
                                 </div>
                               </>
+                            ) : (
+                              <div className="md:col-span-3">
+                                <div className="flex items-center text-sm text-gray-500">
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#3a6ea5] mr-2"></div>
+                                  Cargando antigüedad del empleado...
+                                </div>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -1488,13 +1423,19 @@ export default function SystemAdminDashboard() {
                           step="0.5"
                           min="0.5"
                           max={remainingDays > 0 ? remainingDays : undefined}
+                          disabled={!canTakeVacations}
                         />
-                        {selectedEmployeeSeniority && parseFloat(formData.Days) > remainingDays && remainingDays > 0 && (
+                        {selectedEmployeeSeniority && !canTakeVacations && (
+                          <p className="mt-1 text-xs text-red-600 font-bold">
+                            NO HAY DÍAS DISPONIBLES. LA ANTIGÜEDAD DEBE SER DE AL MENOS 1 AÑO.
+                          </p>
+                        )}
+                        {selectedEmployeeSeniority && canTakeVacations && parseFloat(formData.Days) > remainingDays && remainingDays > 0 && (
                           <p className="mt-1 text-xs text-red-600">
                             Los días solicitados ({formData.Days}) exceden los días restantes ({remainingDays} días)
                           </p>
                         )}
-                        {remainingDays <= 0 && selectedEmployeeSeniority && (
+                        {canTakeVacations && remainingDays <= 0 && (
                           <p className="mt-1 text-xs text-red-600 font-bold">
                             NO HAY DÍAS DISPONIBLES PARA ESTE EMPLEADO
                           </p>
@@ -1532,6 +1473,7 @@ export default function SystemAdminDashboard() {
                 </button>
                 <button
                   type="submit"
+                  disabled={saving || !canTakeVacations}
                   className="px-6 py-2.5 bg-[#3a6ea5] text-white font-bold rounded-lg hover:bg-[#2d5592] transition-colors flex items-center justify-center whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {saving ? (
@@ -1791,26 +1733,29 @@ export default function SystemAdminDashboard() {
                   <tr>
                     <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">ID</th>
                     <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">NOMBRE DEL EMPLEADO</th>
+                    <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">TIPO</th>
                     <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">PUESTO</th>
                     <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">FECHA DE INGRESO</th>
                     <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">AÑOS DE ANTIGÜEDAD</th>
-                    <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">DÍAS DE VACACIONES</th>
+                    <th className="py-3 px-4 text-center text-sm font-bold text-gray-700 uppercase border-b border-gray-300">DÍAS DISPONIBLES</th>
+                    <th className="py-3 px-4 text-center text-sm font-bold text-gray-700 uppercase border-b border-gray-300">DÍAS USADOS</th>
+                    <th className="py-3 px-4 text-center text-sm font-bold text-gray-700 uppercase border-b border-gray-300">DÍAS RESTANTES</th>
                     <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 text-center">ACCIONES</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center">
+                      <td colSpan={10} className="py-12 text-center">
                         <div className="flex flex-col items-center justify-center">
                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#3a6ea5] mb-2"></div>
                           <p className="text-gray-600">Cargando períodos de vacaciones...</p>
                         </div>
-                       </td>
-                     </tr>
+                      </td>
+                    </tr>
                   ) : currentEmployees.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center">
+                      <td colSpan={10} className="py-12 text-center">
                         <div className="flex flex-col items-center justify-center">
                           <AlertCircle className="h-8 w-8 text-gray-400 mb-3" />
                           <p className="text-sm font-medium text-gray-600 mt-2 leading-5">
@@ -1823,11 +1768,18 @@ export default function SystemAdminDashboard() {
                     currentEmployees.map((employee, index) => (
                       <tr key={getUniqueKey(employee, index)} className="hover:bg-gray-50 transition-colors border-b border-gray-300">
                         <td className="py-3 px-4 text-sm text-gray-800 font-medium">{employee.EmployeeID}</td>
-                        <td className="py-3 px-4 text-sm text-gray-800 uppercase">{`${employee.FirstName} ${employee.LastName} ${employee.MiddleName || ''}`.trim()}</td>
+                        <td className="py-3 px-4 text-sm text-gray-800 uppercase">
+                          {`${employee.FirstName} ${employee.LastName} ${employee.MiddleName || ''}`.trim()}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-gray-600 uppercase">{employee.tipo || 'BASE'}</td>
                         <td className="py-3 px-4 text-sm text-gray-600 uppercase max-w-xs truncate">{employee.Position}</td>
                         <td className="py-3 px-4 text-sm text-gray-600">{formatDate(employee.ContractStartDate)}</td>
                         <td className="py-3 px-4 text-sm text-gray-600">{employee.YearsOfSeniority}</td>
-                        <td className="py-3 px-4 text-sm text-gray-600">{employee.DaysOfVacations}</td>
+                        <td className="py-3 px-4 text-sm text-gray-600 text-center">{employee.DaysOfVacations}</td>
+                        <td className="py-3 px-4 text-sm text-gray-600 text-center">{employee.TotalUsedDays}</td>
+                        <td className="py-3 px-4 text-sm text-gray-600 text-center">
+                            {employee.RemainingDays} {employee.RemainingDays === 1 ? 'día' : 'días'}
+                        </td>
                         <td className="py-3 px-4">
                           <div className="flex items-center justify-center gap-2">
                             <button
@@ -1880,32 +1832,17 @@ export default function SystemAdminDashboard() {
 
       <style jsx global>{`
         @keyframes fade-in {
-          from {
-            opacity: 0;
-            transform: translateY(-10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
         }
         
         @keyframes spin {
-          from {
-            transform: rotate(0deg);
-          }
-          to {
-            transform: rotate(360deg);
-          }
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
         
-        .animate-fade-in {
-          animation: fade-in 0.3s ease-out;
-        }
-        
-        .animate-spin {
-          animation: spin 1s linear infinite;
-        }
+        .animate-fade-in { animation: fade-in 0.3s ease-out; }
+        .animate-spin { animation: spin 1s linear infinite; }
         
         body {
           padding-top: 0;
@@ -1914,21 +1851,13 @@ export default function SystemAdminDashboard() {
           overflow-x: hidden;
         }
         
-        .fixed.inset-0.z-\\[9999\\] {
-          z-index: 9999 !important;
-        }
+        .fixed.inset-0.z-\\[9999\\] { z-index: 9999 !important; }
         
-        header, footer {
-          z-index: 50 !important;
-        }
+        header, footer { z-index: 50 !important; }
         
-        body.modal-open {
-          overflow: hidden;
-        }
+        body.modal-open { overflow: hidden; }
         
-        textarea {
-          resize: none;
-        }
+        textarea { resize: none; }
       `}</style>
     </div>
   );
