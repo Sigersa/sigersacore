@@ -1,399 +1,116 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getConnection } from '@/lib/db';
 import { validateAndRenewSession } from '@/lib/auth';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
-import { UTApi } from 'uploadthing/server';
+import { RowDataPacket } from 'mysql2';
+import type { PoolConnection } from 'mysql2/promise';
 
-// Interfaces para tipado seguro
-interface Payroll extends RowDataPacket {
-  PayrollID: number;
+const EXTRA_FACTOR = 1.5;
+
+interface PeriodRow extends RowDataPacket {
+  PayrollPeriodID: number;
   ProjectID: number;
-  Date: string | Date;
-  Concept: string;
-  MethodID: number;
-  Total: number;
-  Observations: string;
+  WeekNumber: number;
+  StartDate: string | Date;
+  EndDate: string | Date;
   Status: number;
-  Archivos: string;
+  TotalWeek: number | null;
+  TotalRegularHours: number | null;
+  TotalExtraHours: number | null;
+  TotalEntries: number | null;
+  PayrollID: number | null;
+  Total: number | null;
+  PayrollStatus: number | null;
+  Archivos: string | null;
+  MethodID: number | null;
+  MethodName: string | null;
 }
 
-interface Project extends RowDataPacket {
-  ProjectID: number;
-  NameProject: string;
-  AdminProjectID: number;
-}
-
-interface PaymentMethod extends RowDataPacket {
-  MethodID: number;
-  MethodName: string;
-}
-
-interface ArchivoAdjunto {
-  nombre: string;
-  url: string;
-  tipo: string;
-  key: string;
-}
-
-const utapi = new UTApi();
-
-// Función para formatear fechas
-function formatDate(date: string | Date): string {
-  if (date instanceof Date) {
-    return date.toISOString().split('T')[0];
-  }
-  return date.includes('T') ? date.split('T')[0] : date;
-}
-
-// Helper para validar sesión
 async function getAuthenticatedUser(request: NextRequest) {
   const sessionId = request.cookies.get('session')?.value;
   if (!sessionId) return null;
   return await validateAndRenewSession(sessionId);
 }
 
-// GET - Obtener nóminas por proyecto
-export async function GET(request: NextRequest): Promise<NextResponse> {
-  let connection;
+const ymd = (d: string | Date) =>
+  typeof d === 'string' ? d.slice(0, 10) : d.toISOString().slice(0, 10);
 
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  let connection: PoolConnection | undefined;
   try {
     const user = await getAuthenticatedUser(request);
-    if (!user) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
-    }
+    if (!user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
 
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get('projectId');
+    if (!projectId) return NextResponse.json({ message: 'Project ID es requerido' }, { status: 400 });
 
-    if (!projectId) {
-      return NextResponse.json(
-        { message: 'Project ID es requerido' },
-        { status: 400 }
-      );
-    }
+    connection = (await getConnection()) as PoolConnection;
 
-    connection = await getConnection();
-
-    const [registros] = await connection.execute<(Payroll & PaymentMethod)[]>(
-      `SELECT 
-          p.PayrollID,
-          p.ProjectID,
-          p.Date,
-          p.Concept,
-          p.MethodID,
-          pm.MethodName,
-          p.Total,
-          p.Observations,
-          p.Status,
-          p.Archivos
-        FROM payroll p
-        INNER JOIN paymentmethods pm ON p.MethodID = pm.MethodID
-        WHERE p.ProjectID = ?
-        ORDER BY p.Date DESC`,
+    const [rows] = await connection.execute<PeriodRow[]>(
+      `SELECT
+         pp.PayrollPeriodID,
+         pp.ProjectID,
+         pp.WeekNumber,
+         pp.StartDate,
+         pp.EndDate,
+         pp.Status,
+         py.PayrollID,
+         py.Total,
+         py.Archivos,
+         py.MethodID,
+         pm.MethodName,
+         MAX(py.status) AS PayrollStatus,
+         COALESCE(SUM(
+           pe.RegularHours * (COALESCE(COALESCE(pc.Salary, ppa.SalaryInProject),0) / 8)
+           + pe.ExtraHours * (COALESCE(COALESCE(pc.Salary, ppa.SalaryInProject),0) / 8) * ${EXTRA_FACTOR}
+         ), 0) AS TotalWeek,
+         COALESCE(SUM(pe.RegularHours), 0) AS TotalRegularHours,
+         COALESCE(SUM(pe.ExtraHours), 0)   AS TotalExtraHours,
+         COUNT(pe.EntryID)                 AS TotalEntries
+       FROM payroll_periods pp
+       LEFT JOIN payroll py ON py.PayrollPeriodID = pp.PayrollPeriodID
+       LEFT JOIN paymentmethods pm ON pm.MethodID = py.MethodID
+       LEFT JOIN payroll_entries pe ON pe.PayrollPeriodID = pp.PayrollPeriodID
+       LEFT JOIN projectcontracts pc
+         ON pc.ProjectPersonnelID = pe.ProjectPersonnelID
+        AND pc.ProjectID = pp.ProjectID
+        AND pc.ContractID = (
+              SELECT MAX(pc2.ContractID)
+              FROM projectcontracts pc2
+              WHERE pc2.ProjectPersonnelID = pe.ProjectPersonnelID
+                AND pc2.ProjectID = pp.ProjectID
+            )
+       LEFT JOIN projectpersonnelassignment ppa ON ppa.AssignmentID = pe.AssignmentID
+       WHERE pp.ProjectID = ?
+       GROUP BY pp.PayrollPeriodID, pp.ProjectID, pp.WeekNumber, pp.StartDate,
+                pp.EndDate, pp.Status, py.PayrollID, py.Total, py.status, py.Archivos,
+                py.MethodID, pm.MethodName
+       ORDER BY pp.StartDate DESC`,
       [projectId]
     );
 
-    return NextResponse.json(registros);
+    return NextResponse.json(
+      rows.map(r => ({
+        PayrollPeriodID: r.PayrollPeriodID,
+        ProjectID: r.ProjectID,
+        WeekNumber: r.WeekNumber,
+        StartDate: ymd(r.StartDate),
+        EndDate: ymd(r.EndDate),
+        Status: r.Status,
+        TotalWeek: Number(r.TotalWeek) || 0,
+        TotalRegularHours: Number(r.TotalRegularHours) || 0,
+        TotalExtraHours: Number(r.TotalExtraHours) || 0,
+        TotalEntries: Number(r.TotalEntries) || 0,
+        Total: r.Total !== null ? Number(r.Total) : null,
+        PayrollStatus: r.PayrollStatus !== null ? Number(r.PayrollStatus) : null,
+        Archivos: r.Archivos || null,
+        MethodID: r.MethodID !== null ? Number(r.MethodID) : null,
+        MethodName: r.MethodName || null,
+      }))
+    );
   } catch (error) {
-    console.error('Error al obtener registros:', error);
-    return NextResponse.json(
-      { message: 'Error al obtener registros' },
-      { status: 500 }
-    );
-  } finally {
-    if (connection) connection.release();
-  }
-}
-
-// POST - Crear nueva nómina
-export async function POST(request: NextRequest): Promise<NextResponse> {
-  let connection;
-
-  try {
-    const user = await getAuthenticatedUser(request);
-    if (!user) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
-    }
-
-    const {
-      projectId,
-      date,
-      concept,
-      total,
-      observations,
-      methodId,
-      archivos = []
-    } = await request.json();
-
-    // Validación de campos requeridos
-    if (!projectId || !date || !concept || !total || !methodId) {
-      return NextResponse.json(
-        { message: 'Faltan campos requeridos' },
-        { status: 400 }
-      );
-    }
-
-    connection = await getConnection();
-
-    // Verificar que el proyecto existe
-    const [projectRows] = await connection.execute<Project[]>(
-      `SELECT ProjectID, AdminProjectID FROM projects WHERE ProjectID = ?`,
-      [projectId]
-    );
-
-    if (projectRows.length === 0) {
-      return NextResponse.json({ message: 'Proyecto no existe' }, { status: 400 });
-    }
-
-    // Verificar que el método de pago existe
-    const [methodRows] = await connection.execute<PaymentMethod[]>(
-      `SELECT MethodID FROM paymentmethods WHERE MethodID = ?`,
-      [methodId]
-    );
-
-    if (methodRows.length === 0) {
-      return NextResponse.json({ message: 'Método de pago no válido' }, { status: 400 });
-    }
-
-    // Crear el registro en la base de datos
-    const [result] = await connection.execute<ResultSetHeader>(
-      `INSERT INTO payroll 
-       (ProjectID, Date, Concept, Total, Observations, Status, MethodID, Archivos) 
-       VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
-      [
-        projectId,
-        formatDate(date),
-        concept,
-        total,
-        observations || null,
-        methodId,
-        JSON.stringify(archivos)
-      ]
-    );
-
-    return NextResponse.json({
-      message: 'Registro de nómina creado correctamente',
-      id: result.insertId
-    }, { status: 201 });
-  } catch (error) {
-    console.error('Error al crear registro de nómina:', error);
-    return NextResponse.json(
-      { message: 'Error al crear registro de nómina' },
-      { status: 500 }
-    );
-  } finally {
-    if (connection) connection.release();
-  }
-}
-
-// PUT - Actualizar nómina existente
-export async function PUT(request: NextRequest): Promise<NextResponse> {
-  let connection;
-
-  try {
-    const user = await getAuthenticatedUser(request);
-    if (!user) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-
-    if (!id) {
-      return NextResponse.json(
-        { message: 'ID es requerido' },
-        { status: 400 }
-      );
-    }
-
-    const {
-      date,
-      concept,
-      total,
-      observations,
-      methodId,
-      archivos = []
-    } = await request.json();
-
-    connection = await getConnection();
-
-    // Verificar que el registro existe
-    const [payrollRows] = await connection.execute<Payroll[]>(
-      `SELECT * FROM payroll WHERE PayrollID = ?`,
-      [id]
-    );
-
-    if (payrollRows.length === 0) {
-      return NextResponse.json({ message: 'Registro no encontrado' }, { status: 404 });
-    }
-
-    const payroll = payrollRows[0];
-
-    // Verificar que el método de pago existe
-    const [methodRows] = await connection.execute<PaymentMethod[]>(
-      `SELECT MethodID FROM paymentmethods WHERE MethodID = ?`,
-      [methodId]
-    );
-
-    if (methodRows.length === 0) {
-      return NextResponse.json({ message: 'Método de pago no válido' }, { status: 400 });
-    }
-
-    // Verificar si hay cambios reales
-    const fechaFormateada = formatDate(date);
-    const oldFechaFormateada = formatDate(payroll.Date);
-
-    const hasChanges =
-      oldFechaFormateada !== fechaFormateada ||
-      payroll.Concept !== concept ||
-      payroll.Total !== total ||
-      payroll.Observations !== (observations || null) ||
-      payroll.MethodID !== methodId ||
-      JSON.stringify(JSON.parse(payroll.Archivos || '[]')) !== JSON.stringify(archivos || []);
-
-    if (!hasChanges) {
-      return NextResponse.json({
-        message: 'No se detectaron cambios para actualizar',
-        affectedRows: 0
-      });
-    }
-
-    // Eliminar archivos antiguos si es necesario
-    if (payroll.Archivos && archivos.length > 0) {
-      const archivosAntiguos: ArchivoAdjunto[] = JSON.parse(payroll.Archivos);
-      const filesToRemove = archivosAntiguos
-        .filter((archivo: ArchivoAdjunto) =>
-          archivo.key && !archivos.some((a: ArchivoAdjunto) => a.key === archivo.key)
-        )
-        .map((archivo: ArchivoAdjunto) => archivo.key);
-
-      if (filesToRemove.length > 0) {
-        await utapi.deleteFiles(filesToRemove);
-      }
-    }
-
-    // Actualizar el registro
-    const [result] = await connection.execute<ResultSetHeader>(
-      `UPDATE payroll SET
-        Date = ?,
-        Concept = ?,
-        Total = ?,
-        Observations = ?,
-        MethodID = ?,
-        Archivos = ?,
-        Status = 0
-       WHERE PayrollID = ?`,
-      [
-        fechaFormateada,
-        concept,
-        total,
-        observations || null,
-        methodId,
-        JSON.stringify(archivos),
-        id
-      ]
-    );
-
-    return NextResponse.json({
-      message: 'Registro de nómina actualizado correctamente',
-      affectedRows: result.affectedRows
-    });
-  } catch (error) {
-    console.error('Error al actualizar registro de nómina:', error);
-    return NextResponse.json(
-      { message: 'Error al actualizar registro de nómina' },
-      { status: 500 }
-    );
-  } finally {
-    if (connection) connection.release();
-  }
-}
-
-// DELETE - Eliminar nómina
-export async function DELETE(request: NextRequest): Promise<NextResponse> {
-  let connection;
-
-  try {
-    const user = await getAuthenticatedUser(request);
-    if (!user) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
-    }
-
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-
-    if (!id) {
-      return NextResponse.json(
-        { message: 'ID es requerido' },
-        { status: 400 }
-      );
-    }
-
-    connection = await getConnection();
-
-    // Obtener el registro para eliminar archivos asociados
-    const [payrollRows] = await connection.execute<Payroll[]>(
-      `SELECT PayrollID, Archivos, ProjectID FROM payroll WHERE PayrollID = ?`,
-      [id]
-    );
-
-    if (payrollRows.length === 0) {
-      return NextResponse.json({ message: 'Registro no encontrado' }, { status: 404 });
-    }
-
-    const payroll = payrollRows[0];
-    let deleteSuccess = true;
-
-    // Eliminar archivos de UploadThing si existen
-    if (payroll.Archivos) {
-      const archivos: ArchivoAdjunto[] = JSON.parse(payroll.Archivos);
-      const filesToRemove = archivos
-        .filter((archivo: ArchivoAdjunto) => archivo.key)
-        .map((archivo: ArchivoAdjunto) => archivo.key);
-
-      if (filesToRemove.length > 0) {
-        try {
-          await utapi.deleteFiles(filesToRemove);
-        } catch (error) {
-          console.error('Error al eliminar archivos:', error);
-          deleteSuccess = false;
-        }
-      }
-    }
-
-    // Eliminar el registro de la base de datos
-    const [result] = await connection.execute<ResultSetHeader>(
-      `DELETE FROM payroll WHERE PayrollID = ?`,
-      [id]
-    );
-
-    if (result.affectedRows === 0) {
-      return NextResponse.json(
-        { message: 'No se encontró el registro a eliminar' },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json({
-      message: deleteSuccess
-        ? 'Registro de nómina y archivos eliminados correctamente'
-        : 'Registro de nómina eliminado pero hubo problemas eliminando algunos archivos',
-      affectedRows: result.affectedRows
-    });
-  } catch (error: any) {
-    console.error('Error al eliminar registro de nómina:', error);
-
-    if (error.code === 'ER_ROW_IS_REFERENCED_2') {
-      return NextResponse.json(
-        { message: 'No se puede eliminar: hay registros dependientes.' },
-        { status: 409 }
-      );
-    }
-
-    return NextResponse.json(
-      { message: 'Error al eliminar registro de nómina' },
-      { status: 500 }
-    );
+    console.error('Error al obtener periodos:', error);
+    return NextResponse.json({ message: 'Error al obtener periodos' }, { status: 500 });
   } finally {
     if (connection) connection.release();
   }
