@@ -17,6 +17,9 @@ interface Project extends RowDataPacket {
   ClientID: number | null;
   AreaID: number | null;
   ExternalProjectManagerID: number | null;
+  SiteManagerID: number | null;
+  OC: number | null;
+  AreadeTrabajo: string | null;
   CreatedBy: number | null;
 }
 
@@ -39,6 +42,14 @@ interface ExternalProjectManager extends RowDataPacket {
   Phone: string;
 }
 
+interface SiteManager extends RowDataPacket {
+  SiteManagerID: number;
+  NameSiteManager: string;
+  ClientID: number;
+  Email: string;
+  Phone: string;
+}
+
 interface Area extends RowDataPacket {
   AreaID: number;
   AreaName: string;
@@ -49,6 +60,9 @@ interface ProjectWithManager extends Project {
   ExternalProjectManagerName?: string;
   ExternalProjectManagerEmail?: string;
   ExternalProjectManagerPhone?: string;
+  SiteManagerName?: string;
+  SiteManagerEmail?: string;
+  SiteManagerPhone?: string;
 }
 
 interface CountResult extends RowDataPacket {
@@ -75,29 +89,14 @@ const tablesToCheck = [
   'waterice'
 ];
 
-// ============ HELPERS ============
-
-/**
- * Normaliza cualquier fecha al formato YYYY-MM-DD que MySQL acepta para columnas DATE.
- * Acepta:
- *  - 'YYYY-MM-DD'
- *  - 'YYYY-MM-DDTHH:mm:ss.sssZ' (ISO)
- *  - Date object
- *  - null / undefined / '' → devuelve null
- */
 function normalizeDateToMySQL(value: any): string | null {
   if (value === null || value === undefined || value === '') return null;
-
-  // Si ya es string tipo 'YYYY-MM-DD', devolverlo tal cual
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return value;
   }
-
-  // Intentar convertir a Date
   try {
     const date = new Date(value);
     if (isNaN(date.getTime())) return null;
-
     const year = date.getUTCFullYear();
     const month = String(date.getUTCMonth() + 1).padStart(2, '0');
     const day = String(date.getUTCDate()).padStart(2, '0');
@@ -117,10 +116,7 @@ async function checkInvalidRecords(projectId: string, connection: Connection) {
     );
 
     if (rows[0].count > 0) {
-      invalidRecords.push({
-        table,
-        count: rows[0].count
-      });
+      invalidRecords.push({ table, count: rows[0].count });
     }
   }
 
@@ -169,6 +165,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const checkActive = searchParams.get('checkActive');
     const excludeProjectId = searchParams.get('excludeProjectId');
     const externalManagers = searchParams.get('externalManagers');
+    const siteManagers = searchParams.get('siteManagers');
     const employeesList = searchParams.get('employees');
     const clientId = searchParams.get('clientId');
 
@@ -181,10 +178,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     if (projectId && !checkRecords) {
       let query = `
-        SELECT p.*, epm.NameProjectManager as ExternalProjectManagerName, 
-               epm.Email as ExternalProjectManagerEmail, epm.Phone as ExternalProjectManagerPhone
+        SELECT p.*,
+               epm.NameProjectManager as ExternalProjectManagerName,
+               epm.Email as ExternalProjectManagerEmail,
+               epm.Phone as ExternalProjectManagerPhone,
+               sm.NameSiteManager as SiteManagerName,
+               sm.Email as SiteManagerEmail,
+               sm.Phone as SiteManagerPhone
         FROM projects p
         LEFT JOIN externalprojectmanager epm ON p.ExternalProjectManagerID = epm.ExternalProjectManagerID
+        LEFT JOIN sitemanager sm ON p.SiteManagerID = sm.SiteManagerID
         WHERE p.ProjectID = ?
       `;
       const params: any[] = [projectId];
@@ -206,7 +209,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json(projectRows[0]);
     }
 
-    // Endpoint para obtener Project Managers Externos (opcionalmente filtrados por cliente)
     if (externalManagers) {
       let query = `SELECT * FROM externalprojectmanager`;
       const params: any[] = [];
@@ -219,6 +221,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       query += ` ORDER BY NameProjectManager ASC`;
 
       const [managers] = await connection.query<ExternalProjectManager[]>(query, params);
+      return NextResponse.json(managers);
+    }
+
+    if (siteManagers) {
+      let query = `SELECT * FROM sitemanager`;
+      const params: any[] = [];
+
+      if (clientId) {
+        query += ` WHERE ClientID = ?`;
+        params.push(clientId);
+      }
+
+      query += ` ORDER BY NameSiteManager ASC`;
+
+      const [managers] = await connection.query<SiteManager[]>(query, params);
       return NextResponse.json(managers);
     }
 
@@ -266,10 +283,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     let projectsQuery = `
-      SELECT p.*, epm.NameProjectManager as ExternalProjectManagerName, 
-             epm.Email as ExternalProjectManagerEmail, epm.Phone as ExternalProjectManagerPhone
+      SELECT p.*,
+             epm.NameProjectManager as ExternalProjectManagerName,
+             epm.Email as ExternalProjectManagerEmail,
+             epm.Phone as ExternalProjectManagerPhone,
+             sm.NameSiteManager as SiteManagerName,
+             sm.Email as SiteManagerEmail,
+             sm.Phone as SiteManagerPhone
       FROM projects p
       LEFT JOIN externalprojectmanager epm ON p.ExternalProjectManagerID = epm.ExternalProjectManagerID
+      LEFT JOIN sitemanager sm ON p.SiteManagerID = sm.SiteManagerID
     `;
     const projectsParams: any[] = [];
 
@@ -344,7 +367,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ProjectType,
       ProjectBudget,
       ExternalProjectManagerID,
+      SiteManagerID,
+      OC,
       AreaID,
+      AreadeTrabajo,
       StartDate,
       EndDate
     } = body;
@@ -409,7 +435,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
-    // Validar que el Project Manager Externo exista si se proporciona
     let externalManagerId: number | null = null;
     if (ExternalProjectManagerID) {
       const [managerRows] = await connection.query<ExternalProjectManager[]>(
@@ -427,14 +452,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       externalManagerId = ExternalProjectManagerID;
     }
 
-    // Normalizar fechas
+    let siteManagerId: number | null = null;
+    if (SiteManagerID) {
+      const [siteRows] = await connection.query<SiteManager[]>(
+        `SELECT SiteManagerID FROM sitemanager WHERE SiteManagerID = ?`,
+        [SiteManagerID]
+      );
+
+      if (siteRows.length === 0) {
+        return NextResponse.json(
+          { success: false, message: 'El Site Manager especificado no existe' },
+          { status: 400 }
+        );
+      }
+
+      siteManagerId = SiteManagerID;
+    }
+
     const startDate = normalizeDateToMySQL(StartDate) || normalizeDateToMySQL(new Date());
     const endDate = normalizeDateToMySQL(EndDate);
+    const areaDeTrabajoValue =
+      AreadeTrabajo !== undefined && AreadeTrabajo !== null && String(AreadeTrabajo).trim() !== ''
+        ? String(AreadeTrabajo).trim()
+        : null;
 
     const [result] = await connection.query<ResultSetHeader>(`
-      INSERT INTO projects 
-      (NameProject, ProjectAddress, AdminProjectID, StartDate, EndDate, Status, ProjectType, ProjectBudget, AreaID, ClientID, ExternalProjectManagerID, CreatedBy)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO projects
+      (NameProject, ProjectAddress, AdminProjectID, StartDate, EndDate, Status, ProjectType, ProjectBudget, AreaID, ClientID, ExternalProjectManagerID, SiteManagerID, OC, AreadeTrabajo, CreatedBy)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       NameProject,
       ProjectAddress || null,
@@ -447,6 +492,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ClientID == 1 ? AreaID : null,
       ClientID || null,
       externalManagerId,
+      siteManagerId,
+      OC !== undefined && OC !== null && OC !== '' ? parseInt(OC) : null,
+      areaDeTrabajoValue,
       user.UserID
     ]);
 
@@ -454,9 +502,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       SELECT * FROM projects WHERE ProjectID = ?
     `, [result.insertId]);
 
-    const newProject = projectRows[0];
-
-    return NextResponse.json(newProject, { status: 201 });
+    return NextResponse.json(projectRows[0], { status: 201 });
   } catch (error) {
     console.error('Error al crear proyecto:', error);
     return NextResponse.json(
@@ -586,7 +632,10 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
         ProjectType,
         ProjectBudget,
         ExternalProjectManagerID,
+        SiteManagerID,
+        OC,
         AreaID,
+        AreadeTrabajo,
         StartDate,
         EndDate
       } = body;
@@ -644,7 +693,6 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
         }
       }
 
-      // Validar que el Project Manager Externo exista si se proporciona
       let externalManagerId: number | null = null;
       if (ExternalProjectManagerID) {
         const [managerRows] = await connection.query<ExternalProjectManager[]>(
@@ -662,14 +710,35 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
         externalManagerId = ExternalProjectManagerID;
       }
 
-      // ✅ Normalizar fechas antes de pasarlas a MySQL
+      let siteManagerId: number | null = null;
+      if (SiteManagerID) {
+        const [siteRows] = await connection.query<SiteManager[]>(
+          `SELECT SiteManagerID FROM sitemanager WHERE SiteManagerID = ?`,
+          [SiteManagerID]
+        );
+
+        if (siteRows.length === 0) {
+          return NextResponse.json(
+            { success: false, message: 'El Site Manager especificado no existe' },
+            { status: 400 }
+          );
+        }
+
+        siteManagerId = SiteManagerID;
+      }
+
       const normalizedStartDate = normalizeDateToMySQL(StartDate);
       const normalizedEndDate = normalizeDateToMySQL(EndDate);
+      const areaDeTrabajoValue =
+        AreadeTrabajo !== undefined && AreadeTrabajo !== null && String(AreadeTrabajo).trim() !== ''
+          ? String(AreadeTrabajo).trim()
+          : null;
 
       const [result] = await connection.query<ResultSetHeader>(`
-        UPDATE projects 
-        SET NameProject = ?, AdminProjectID = ?, ClientID = ?, ProjectType = ?, ProjectBudget = ?, 
-            ExternalProjectManagerID = ?, AreaID = ?, StartDate = ?, EndDate = ?
+        UPDATE projects
+        SET NameProject = ?, AdminProjectID = ?, ClientID = ?, ProjectType = ?, ProjectBudget = ?,
+            ExternalProjectManagerID = ?, SiteManagerID = ?, OC = ?, AreaID = ?, AreadeTrabajo = ?,
+            StartDate = ?, EndDate = ?
         WHERE ProjectID = ?
       `, [
         NameProject,
@@ -678,7 +747,10 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
         ProjectType || null,
         ProjectBudget || null,
         externalManagerId,
+        siteManagerId,
+        OC !== undefined && OC !== null && OC !== '' ? parseInt(OC) : null,
         ClientID == 1 ? AreaID : null,
+        areaDeTrabajoValue,
         normalizedStartDate,
         normalizedEndDate,
         projectId
@@ -692,17 +764,21 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
       }
 
       const [updatedProjectRows] = await connection.query<ProjectWithManager[]>(
-        `SELECT p.*, epm.NameProjectManager as ExternalProjectManagerName, 
-                epm.Email as ExternalProjectManagerEmail, epm.Phone as ExternalProjectManagerPhone
+        `SELECT p.*,
+                epm.NameProjectManager as ExternalProjectManagerName,
+                epm.Email as ExternalProjectManagerEmail,
+                epm.Phone as ExternalProjectManagerPhone,
+                sm.NameSiteManager as SiteManagerName,
+                sm.Email as SiteManagerEmail,
+                sm.Phone as SiteManagerPhone
          FROM projects p
          LEFT JOIN externalprojectmanager epm ON p.ExternalProjectManagerID = epm.ExternalProjectManagerID
+         LEFT JOIN sitemanager sm ON p.SiteManagerID = sm.SiteManagerID
          WHERE p.ProjectID = ?`,
         [projectId]
       );
 
-      const updatedProject = updatedProjectRows[0];
-
-      return NextResponse.json(updatedProject, { status: 200 });
+      return NextResponse.json(updatedProjectRows[0], { status: 200 });
     }
   } catch (error) {
     console.error('Error al actualizar proyecto:', error);
