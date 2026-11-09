@@ -98,10 +98,16 @@ export default function Page() {
       description: 'Administración de Project Managers',
       icon: <Users className="h-6 w-6" />,
       href: '/executive-dashboard/modules/external-managers'
+    },
+    {
+      id: 6,
+      title: 'GESTIÓN DE SITE MANAGERS',
+      description: 'Administración de Site Managers',
+      icon: <Users className="h-6 w-6" />,
+      href: '/executive-dashboard/modules/site-managers'
     }
   ]
 
-  // Efecto principal para cargar datos del usuario
   useEffect(() => {
     let isMounted = true
 
@@ -155,7 +161,6 @@ export default function Page() {
     }
   }, [router])
 
-  // Efecto separado para cargar proyectos una vez que userData esté disponible
   useEffect(() => {
     if (!userData.id || userData.id === 0) return
 
@@ -201,7 +206,6 @@ export default function Page() {
     router.push(href)
   }
 
-  // Mostrar loading mientras se verifica la sesión
   if (sessionLoading || isLoading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
@@ -213,7 +217,6 @@ export default function Page() {
     )
   }
 
-  // Si no hay usuario (sesión inválida), no renderizar nada
   if (!user) {
     return null
   }
@@ -224,7 +227,6 @@ export default function Page() {
 
       <main className="pt-[72px] pb-[80px] min-h-screen bg-gray-100">
         <div className="w-full px-3 sm:px-4 md:px-6 py-4 sm:py-6 md:py-8 max-w-7xl mx-auto">
-          {/* Header Section */}
           <div className="mb-6 sm:mb-8">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
               <div className="bg-[#3a6ea5] p-4 rounded-lg shadow border border-[#3a6ea5] w-full">
@@ -236,7 +238,6 @@ export default function Page() {
             </div>
           </div>
 
-          {/* Dashboard Grid */}
           <div className="bg-white rounded-lg shadow border border-gray-300 p-4 md:p-6 mb-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
               {menuItems.map((item) => (
@@ -253,7 +254,6 @@ export default function Page() {
                     }
                   }}
                 >
-                  {/* Icono */}
                   <div className="flex items-start justify-between mb-3">
                     <div className="p-2 rounded border border-gray-300 bg-gray-100 group-hover:bg-[#3a6ea5] group-hover:border-[#3a6ea5] transition-colors">
                       <div className="text-gray-700 group-hover:text-white transition-colors">
@@ -265,7 +265,6 @@ export default function Page() {
                     </div>
                   </div>
 
-                  {/* Contenido */}
                   <div>
                     <h3 className="text-sm font-bold text-gray-900 mb-1 uppercase">
                       {item.title}
@@ -275,7 +274,6 @@ export default function Page() {
                     </p>
                   </div>
 
-                  {/* Estado activo */}
                   <div className="absolute bottom-0 left-0 right-0 h-1 bg-transparent group-hover:bg-[#3a6ea5] rounded-b-lg transition-colors"></div>
                 </div>
               ))}
@@ -284,10 +282,8 @@ export default function Page() {
         </div>
       </main>
 
-      {/* FOOTER - Fixed */}
       <Footer />
 
-      {/* Budget Alert Modal */}
       {showModal && filteredProjects && filteredProjects.length > 0 && (
         <div
           role="dialog"
@@ -344,10 +340,7 @@ export default function Page() {
             <div className="p-6 max-h-80 overflow-y-auto">
               <div className="space-y-4">
                 {filteredProjects.map((project) => (
-                  <div
-                    key={project.projectId}
-                    className="bg-white rounded-lg border border-gray-300 p-4"
-                  >
+                  <div key={project.projectId} className="bg-white rounded-lg border border-gray-300 p-4">
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex-1">
                         <div className="flex items-center space-x-2 mb-1">
@@ -358,33 +351,21 @@ export default function Page() {
                         </div>
                         <p className="text-gray-600 font-medium text-xs">
                           Estado:{' '}
-                          <span
-                            className={`font-bold ${
-                              project.budgetUsagePercentage >= 100
-                                ? 'text-red-500'
-                                : project.budgetUsagePercentage >= 80
-                                ? 'text-orange-400'
-                                : 'text-yellow-500'
-                            }`}
-                          >
-                            {project.budgetUsagePercentage >= 100
-                              ? 'Presupuesto Excedido'
-                              : project.budgetUsagePercentage >= 80
-                              ? 'Alto Consumo'
-                              : 'Consumo Moderado'}
+                          <span className={`font-bold ${
+                            project.budgetUsagePercentage >= 100 ? 'text-red-500'
+                              : project.budgetUsagePercentage >= 80 ? 'text-orange-400' : 'text-yellow-500'
+                          }`}>
+                            {project.budgetUsagePercentage >= 100 ? 'Presupuesto Excedido'
+                              : project.budgetUsagePercentage >= 80 ? 'Alto Consumo' : 'Consumo Moderado'}
                           </span>
                         </p>
                       </div>
                       <div className="text-right">
-                        <div
-                          className={`px-3 py-1 rounded-full text-xs font-bold tracking-wide ${
-                            project.budgetUsagePercentage >= 100
-                              ? 'bg-red-100 text-red-800 border border-red-200'
-                              : project.budgetUsagePercentage >= 80
-                              ? 'bg-orange-100 text-orange-800 border border-orange-200'
-                              : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
-                          }`}
-                        >
+                        <div className={`px-3 py-1 rounded-full text-xs font-bold tracking-wide ${
+                          project.budgetUsagePercentage >= 100 ? 'bg-red-100 text-red-800 border border-red-200'
+                            : project.budgetUsagePercentage >= 80 ? 'bg-orange-100 text-orange-800 border border-orange-200'
+                            : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                        }`}>
                           {project.budgetUsagePercentage.toFixed(1)}% Utilizado
                         </div>
                       </div>
@@ -394,15 +375,11 @@ export default function Page() {
                       <div className="space-y-2">
                         <div className="flex justify-between items-center">
                           <span className="text-gray-600 font-medium text-xs">Presupuesto Total</span>
-                          <span className="font-bold text-[#3a6ea5] text-sm">
-                            ${project.projectBudget.toLocaleString()}
-                          </span>
+                          <span className="font-bold text-[#3a6ea5] text-sm">${project.projectBudget.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-gray-600 font-medium text-xs">Gastos Acumulados</span>
-                          <span className="font-bold text-[#3a6ea5] text-sm">
-                            ${project.totalExpenses.toLocaleString()}
-                          </span>
+                          <span className="font-bold text-[#3a6ea5] text-sm">${project.totalExpenses.toLocaleString()}</span>
                         </div>
                       </div>
                       <div className="flex items-center justify-center">
@@ -421,23 +398,16 @@ export default function Page() {
                         <span>{project.budgetUsagePercentage.toFixed(1)}%</span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                        <div
-                          className={`h-2 rounded-full relative ${
-                            project.budgetUsagePercentage >= 100
-                              ? 'bg-gradient-to-r from-red-500 to-red-600'
-                              : project.budgetUsagePercentage >= 80
-                              ? 'bg-gradient-to-r from-orange-400 to-orange-500'
-                              : 'bg-gradient-to-r from-yellow-400 to-yellow-500'
-                          }`}
-                          style={{ width: `${Math.min(project.budgetUsagePercentage, 100)}%` }}
-                        >
+                        <div className={`h-2 rounded-full relative ${
+                          project.budgetUsagePercentage >= 100 ? 'bg-gradient-to-r from-red-500 to-red-600'
+                            : project.budgetUsagePercentage >= 80 ? 'bg-gradient-to-r from-orange-400 to-orange-500'
+                            : 'bg-gradient-to-r from-yellow-400 to-yellow-500'
+                        }`} style={{ width: `${Math.min(project.budgetUsagePercentage, 100)}%` }}>
                           <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
                         </div>
                       </div>
                       <div className="flex justify-between text-xs text-gray-500 font-medium mt-0.5">
-                        <span>0%</span>
-                        <span>60%</span>
-                        <span>100%</span>
+                        <span>0%</span><span>60%</span><span>100%</span>
                       </div>
                     </div>
                   </div>
@@ -463,40 +433,21 @@ export default function Page() {
         </div>
       )}
 
-      {/* Estilos globales para layout */}
       <style jsx global>{`
         @keyframes spin {
-          from {
-            transform: rotate(0deg);
-          }
-          to {
-            transform: rotate(360deg);
-          }
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
-
-        .animate-spin {
-          animation: spin 1s linear infinite;
-        }
-
-        /* Ajustes de layout para header y footer fijos */
+        .animate-spin { animation: spin 1s linear infinite; }
         body {
           padding-top: 0;
           padding-bottom: 0;
           margin: 0;
           overflow-x: hidden;
         }
-
-        /* Asegurar que el header y footer tengan z-index adecuado */
-        header,
-        footer {
-          z-index: 50 !important;
-        }
-
-        /* Mejorar la visualización en móviles */
+        header, footer { z-index: 50 !important; }
         @media (max-width: 640px) {
-          .grid {
-            gap: 1rem;
-          }
+          .grid { gap: 1rem; }
         }
       `}</style>
     </div>
