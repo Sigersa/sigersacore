@@ -66,15 +66,15 @@ export default function Page() {
   const menuItems: MenuItem[] = [
     {
       id: 1,
-      title: 'REPORTES Y ANÁLISIS',
-      description: 'Generación de reportes detallados y análisis de datos',
+      title: 'RESUMEN',
+      description: 'Generación de resumenes de gastos registrados',
       icon: <UserPlus className="h-6 w-6" />,
       href: '/administrative-dashboard/reports'
     },
     {
       id: 2,
       title: 'COMPROBANTES DE GASTOS',
-      description: 'Generación de comprobantes de gastos',
+      description: 'Generación de formato de comprobación de gastos',
       icon: <FileText className="h-6 w-6" />,
       href: '/administrative-dashboard/expenses-verification'
     },
