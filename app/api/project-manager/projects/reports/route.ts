@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     const tables = getTablesByProjectType(ProjectType);
 
     // Primero creamos la hoja de resumen vacía
-    const resumenSheet = workbook.addWorksheet("Resumen Gastos");
+    const resumenSheet = workbook.addWorksheet("Resumen");
     prepararResumenGastos(resumenSheet);
 
     const resumenData: { categoria: string; total: number }[] = [];
@@ -77,8 +77,8 @@ export async function GET(request: NextRequest) {
 
       // Reordenamos las hojas para que el resumen quede primero
       workbook.worksheets.sort((a, b) => {
-        if (a.name === "Resumen Gastos") return -1;
-        if (b.name === "Resumen Gastos") return 1;
+        if (a.name === "Resumen") return -1;
+        if (b.name === "Resumen") return 1;
         return 0;
       });
     } else {
@@ -90,11 +90,8 @@ export async function GET(request: NextRequest) {
 
     const buffer = await workbook.xlsx.writeBuffer();
 
-    // Usar el nombre real del proyecto para el archivo
-    const safeProjectName = NameProject.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-
     // Agregar información del filtro al nombre del archivo si aplica
-    let reportName = `reporte_gastos_${safeProjectName}`;
+    let reportName = 'REPORTE_GASTOS';
     if (paymentMethod) {
       const [methodData]: any = await connection.execute(
         'SELECT MethodName FROM paymentmethods WHERE MethodID = ?',
@@ -198,7 +195,7 @@ async function exportTableToSheet(
       LEFT JOIN projects p ON t.ProjectID = p.ProjectID
       LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID
       ${hasEmployeeId ? 'LEFT JOIN employees e ON t.EmployeeID = e.EmployeeID' : ''}
-      WHERE t.ProjectID = ? AND t.Status = 1
+      WHERE t.ProjectID = ?
     `;
 
     const queryParams: any[] = [projectId];
