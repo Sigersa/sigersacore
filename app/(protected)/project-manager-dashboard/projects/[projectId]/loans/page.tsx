@@ -1,13 +1,13 @@
+// src/app/project-manager-dashboard/projects/[projectId]/loans/page.tsx
 'use client';
 
 import AppHeader from '@/components/header/3/3.1';
 import Footer from '@/components/footer';
 import { useSessionManager } from '@/hooks/useSessionManager/3';
 import { useInactivityManager } from '@/hooks/useInactivityManager';
-import { useUploadThing } from '@/lib/uploadthing';
-import { useState, useRef, useEffect, useCallback, ChangeEvent, FormEvent, use } from 'react';
+import { useState, useEffect, useCallback, ChangeEvent, FormEvent, use } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Edit, Trash2, X, RefreshCw, CheckCircle, AlertCircle, FileText, Image as ImageIcon, FileSpreadsheet, Upload } from 'lucide-react';
+import { Search, Edit, Trash2, X, RefreshCw, CheckCircle, AlertCircle, FileText, Users, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 
 // ============ INTERFACES ============
 
@@ -23,21 +23,26 @@ interface UserData {
   projectId: number | null;
 }
 
+interface WorkerOption {
+  ProjectPersonnelID: number;
+  FullName: string;
+}
+
 interface LoanData {
   date: Date | null;
-  beneficiary: string;
+  projectPersonnelId: string;
   methodId: string;
   total: number;
   formattedTotal?: string;
   firstDiscount: Date | null;
   numberOfPayments: number | null;
   observations: string;
-  archivos: File[];
 }
 
 interface LoanRecord {
   id: number;
-  beneficiary: string;
+  projectPersonnelId: string;
+  employeeName: string;
   methodId: string;
   date: string;
   total: number;
@@ -47,6 +52,11 @@ interface LoanRecord {
   observations: string;
   status: number;
   archivos: ArchivoAdjunto[];
+  totalCuotas: number;
+  cuotasPagadas: number;
+  cuotasVencidas: number;
+  montoPagado: number;
+  progreso: string;
 }
 
 interface ArchivoAdjunto {
@@ -62,61 +72,65 @@ interface PaymentMethod {
 }
 
 interface PageProps {
-  params: Promise<{
-    projectId: string;
-  }>;
+  params: Promise<{ projectId: string }>;
 }
 
-// ============ FUNCIONES AUXILIARES ============
+// ============ HELPERS ============
 
-const normalizarMayusculas = (texto: string): string => {
-  return texto.toUpperCase();
-};
+const normalizarMayusculas = (t: string) => t.toUpperCase();
 
 const formatCurrency = (value: string): string => {
   const num = value.replace(/[^0-9.]/g, '');
   if (!num) return '';
-  
   const parts = num.split('.');
-  if (parts.length > 2) {
-    return `${parts[0]}.${parts[1]}`;
-  }
-  
-  const numParts = num.split('.');
-  const integerPart = numParts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  
-  return numParts.length > 1 ? `${integerPart}.${numParts[1]}` : integerPart;
+  if (parts.length > 2) return `${parts[0]}.${parts[1]}`;
+  const integerPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return parts.length > 1 ? `${integerPart}.${parts[1]}` : integerPart;
 };
 
-const parseCurrency = (value: string): number => {
-  return parseFloat(value.replace(/,/g, '')) || 0;
-};
+const parseCurrency = (value: string): number =>
+  parseFloat(value.replace(/,/g, '')) || 0;
 
+// Fecha SIN timezone shift
 const formatDate = (dateString: string): string => {
-  try {
-    return new Date(dateString).toLocaleDateString('es-MX', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    });
-  } catch {
-    return dateString;
+  if (!dateString) return '—';
+  const str = String(dateString);
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, y, m, d] = match;
+    return `${d}/${m}/${y}`;
   }
+  try {
+    const dt = new Date(str);
+    if (!isNaN(dt.getTime())) {
+      const y = dt.getUTCFullYear();
+      const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(dt.getUTCDate()).padStart(2, '0');
+      return `${d}/${m}/${y}`;
+    }
+  } catch {}
+  return str;
 };
 
 const formatCurrencyNumber = (amount: number): string => {
   try {
     return new Intl.NumberFormat('es-MX', {
-      style: 'currency',
-      currency: 'MXN',
-      minimumFractionDigits: 2
+      style: 'currency', currency: 'MXN', minimumFractionDigits: 2
     }).format(amount);
   } catch {
     return `$${amount.toFixed(2)}`;
   }
 };
 
-// ============ COMPONENTES DE MODALES ============
+const getPdfUrlFromArchivos = (archivos: ArchivoAdjunto[] | undefined): string | null => {
+  if (!archivos || archivos.length === 0) return null;
+  const pdf = archivos.find(
+    a => a.tipo === 'application/pdf' || a.nombre?.toLowerCase().endsWith('.pdf')
+  );
+  return pdf ? pdf.url : null;
+};
+
+// ============ MODAL GENÉRICO ============
 
 interface ModalProps {
   isOpen: boolean;
@@ -128,55 +142,34 @@ interface ModalProps {
 
 const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, message, type = 'info' }) => {
   if (!isOpen) return null;
-
   const getIcon = () => {
-    switch (type) {
-      case 'success':
-        return <CheckCircle className="h-5 w-5 text-green-600" />;
-      case 'error':
-        return <AlertCircle className="h-5 w-5 text-red-600" />;
-      default:
-        return <AlertCircle className="h-5 w-5 text-blue-600" />;
-    }
+    if (type === 'success') return <CheckCircle className="h-5 w-5 text-green-600" />;
+    if (type === 'error') return <AlertCircle className="h-5 w-5 text-red-600" />;
+    return <AlertCircle className="h-5 w-5 text-blue-600" />;
   };
-
-  const getBgColor = () => {
-    switch (type) {
-      case 'success':
-        return 'bg-green-100';
-      case 'error':
-        return 'bg-red-100';
-      default:
-        return 'bg-blue-100';
-    }
+  const getBg = () => {
+    if (type === 'success') return 'bg-green-100';
+    if (type === 'error') return 'bg-red-100';
+    return 'bg-blue-100';
   };
-
   return (
     <div className="fixed inset-0 flex items-center justify-center z-[9999] p-4 bg-black/70">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full animate-fade-in relative z-[10000]">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full relative z-[10000]">
         <div className="p-6">
           <div className="flex items-center space-x-3">
-            <div className={`flex items-center justify-center w-10 h-10 ${getBgColor()} rounded-full`}>
+            <div className={`flex items-center justify-center w-10 h-10 ${getBg()} rounded-full`}>
               {getIcon()}
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-lg font-bold text-gray-900 tracking-tight">{title}</h3>
-              <div className="mt-1">
-                <p className="text-sm text-gray-600 leading-5">{message}</p>
-              </div>
+              <h3 className="text-lg font-bold text-gray-900">{title}</h3>
+              <p className="mt-1 text-sm text-gray-600 leading-5">{message}</p>
             </div>
-            <button
-              onClick={onClose}
-              className="flex-shrink-0 text-gray-400 hover:text-gray-500 transition-colors duration-200 bg-gray-100 hover:bg-gray-200 rounded-full p-1"
-            >
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-500 bg-gray-100 rounded-full p-1">
               <X className="h-4 w-4" />
             </button>
           </div>
           <div className="mt-4 flex justify-end">
-            <button
-              onClick={onClose}
-              className="px-6 py-2.5 bg-[#3a6ea5] text-white font-bold rounded-lg hover:bg-[#2d5592] transition-colors"
-            >
+            <button onClick={onClose} className="px-6 py-2.5 bg-[#3a6ea5] text-white font-bold rounded-lg hover:bg-[#2d5592]">
               ACEPTAR
             </button>
           </div>
@@ -186,1502 +179,644 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, message, type = '
   );
 };
 
-interface DeleteModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  registro: LoanRecord | null;
-  isDeleting: boolean;
+// ============ MODAL DE ÉXITO CON VISTA PREVIA ============
+
+interface SuccessDetails {
+  LoanID: number;
+  ProjectPersonnelID: number;
+  EmployeeName: string;
+  ApplicationDate: string;
+  Amount: number;
+  NumberOfPayments: number;
+  FirstDiscountDate: string;
+  observations: string;
+  isEdit?: boolean;
+  pdfUrl: string | null;
 }
 
-const DeleteModal: React.FC<DeleteModalProps> = ({ isOpen, onClose, onConfirm, registro, isDeleting }) => {
-  if (!isOpen) return null;
+interface SuccessModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  details: SuccessDetails | null;
+}
+
+const SuccessModal: React.FC<SuccessModalProps> = ({ isOpen, onClose, details }) => {
+  const [pdfLoading, setPdfLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownloadPDF = async () => {
+    if (!details?.pdfUrl) return;
+    try {
+      setDownloading(true);
+      const res = await fetch(details.pdfUrl);
+      if (!res.ok) throw new Error('Error al descargar');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `FT-RH-21-PROYECTO-${details.LoanID}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) setPdfLoading(true);
+  }, [isOpen, details?.LoanID, details?.pdfUrl]);
+
+  if (!isOpen || !details) return null;
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-[9999] p-4 bg-black/70">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full animate-fade-in relative z-[10000]">
-        <div className="p-6 pb-4 border-b border-gray-300">
-          <h2 className="text-lg font-bold text-gray-900 tracking-tight flex items-center">
-            <AlertCircle className="h-5 w-5 text-red-600 mr-2" />
-            CONFIRMAR ELIMINACIÓN
-          </h2>
-          <p className="text-sm text-gray-600 mt-2 leading-5">
-            ¿Está seguro que desea eliminar el préstamo a <span className="font-bold">{registro?.beneficiary}</span>?
-          </p>
-          <p className="text-sm text-gray-500 mt-2">
-            Esta acción no se puede deshacer.
-          </p>
-        </div>
-        <div className="p-6 pt-4 flex justify-end gap-3">
+    <div
+      className="fixed inset-0 flex items-center justify-center z-[9999] p-4 bg-black/70"
+      style={{ margin: 0, top: 0, left: 0, right: 0, bottom: 0 }}
+    >
+      <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full h-[90vh] flex flex-col animate-fade-in relative z-[10000]">
+        <div className="p-6 pb-4 border-b flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900 tracking-tight flex items-center">
+              <CheckCircle className="h-5 w-5 text-green-600 mr-2" />
+              {details.isEdit ? '¡PRÉSTAMO ACTUALIZADO!' : '¡REGISTRO EXITOSO!'}
+            </h2>
+            <p className="text-gray-600 mt-1 text-sm">
+              {details.isEdit
+                ? 'El préstamo ha sido actualizado correctamente.'
+                : 'El préstamo ha sido registrado correctamente.'}
+            </p>
+          </div>
           <button
-            type="button"
             onClick={onClose}
-            disabled={isDeleting}
-            className="bg-gray-200 text-black font-bold py-2.5 px-6 rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50"
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            aria-label="Cerrar modal"
           >
-            CANCELAR
+            <X className="h-5 w-5 text-gray-500" />
           </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={isDeleting}
-            className="px-6 py-2.5 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center min-w-[100px] disabled:opacity-50"
-          >
-            {isDeleting ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                ELIMINANDO...
-              </>
-            ) : (
-              'ELIMINAR'
-            )}
-          </button>
+        </div>
+
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+          <div className="w-full md:w-1/3 p-6 border-r border-gray-200 overflow-y-auto">
+            <div className="space-y-4">
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="font-bold text-gray-800 mb-3 text-sm uppercase">DETALLES DEL REGISTRO</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="block text-xs font-bold text-gray-700 uppercase">ID PRÉSTAMO:</span>
+                    <span className="text-gray-600 mt-1 text-sm">{details.LoanID}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="block text-xs font-bold text-gray-700 uppercase">ID EMPLEADO:</span>
+                    <span className="text-gray-600 mt-1 text-sm">{details.ProjectPersonnelID}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="block text-xs font-bold text-gray-700 uppercase">EMPLEADO:</span>
+                    <span className="text-gray-600 mt-1 text-sm text-right">{details.EmployeeName}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="block text-xs font-bold text-gray-700 uppercase">FECHA SOLICITUD:</span>
+                    <span className="text-gray-600 mt-1 text-sm">{formatDate(details.ApplicationDate)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="font-bold text-gray-800 mb-3 text-sm uppercase">DOCUMENTO GENERADO</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <FileText className="h-5 w-5 text-gray-600 mr-2" />
+                      <span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-21 (PDF)</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleDownloadPDF}
+                        disabled={downloading || !details.pdfUrl}
+                        className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Descargar PDF"
+                      >
+                        {downloading ? (
+                          <div className="h-4 w-4 border-2 border-gray-700 border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <Download className="h-4 w-4 text-gray-700" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 flex flex-col p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-gray-800 text-sm uppercase">
+                VISTA PREVIA - FORMATO FT-RH-21
+              </h3>
+            </div>
+
+            <div className="flex-1 border border-gray-300 rounded-lg overflow-hidden relative bg-gray-50">
+              {!details.pdfUrl ? (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="flex flex-col items-center text-gray-500">
+                    <AlertCircle className="h-10 w-10 mb-2" />
+                    <p className="text-sm">No hay documento disponible</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {pdfLoading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                      <div className="flex flex-col items-center">
+                        <div className="w-12 h-12 border-4 border-gray-300 border-t-[#3a6ea5] animate-spin rounded-full mb-3"></div>
+                        <p className="text-sm text-gray-600">Cargando vista previa...</p>
+                      </div>
+                    </div>
+                  )}
+                  <iframe
+                    src={details.pdfUrl}
+                    className="w-full h-full border-0"
+                    onLoad={() => setPdfLoading(false)}
+                    title="Vista previa del formato FT-RH-21"
+                  />
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 };
 
-// ============ COMPONENTE DE ICONO DE ARCHIVO ============
+// ============ LOAN FORM (sin adjuntar archivos) ============
 
-function FileIcon({ type, size = 5 }: { type: string; size?: number }) {
-  const iconClass = `h-${size} w-${size}`;
-
-  if (type?.startsWith('image/')) {
-    return <ImageIcon className={`${iconClass} text-blue-500`} />;
-  } else if (type === 'application/pdf') {
-    return <FileText className={`${iconClass} text-red-500`} />;
-  } else if (type?.includes('excel') || type?.includes('spreadsheet')) {
-    return <FileSpreadsheet className={`${iconClass} text-green-500`} />;
-  } else {
-    return <FileText className={`${iconClass} text-gray-500`} />;
-  }
-}
-
-// ============ MODAL DE EDICIÓN ============
-
-interface EditModalProps {
+interface LoanFormModalProps {
   isOpen: boolean;
+  mode: 'create' | 'edit';
   onClose: () => void;
-  registro: LoanRecord | null;
-  onSave: (data: LoanRecord) => void;
-  paymentMethods: PaymentMethod[];
+  onSave: (data: any) => void;
   isSaving: boolean;
+  paymentMethods: PaymentMethod[];
+  workers: WorkerOption[];
+  initialData?: LoanRecord | null;
 }
 
-const EditModal: React.FC<EditModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  registro, 
-  onSave, 
-  paymentMethods,
-  isSaving 
+const LoanFormModal: React.FC<LoanFormModalProps> = ({
+  isOpen, mode, onClose, onSave, isSaving, paymentMethods, workers, initialData
 }) => {
-  const [editData, setEditData] = useState<LoanRecord | null>(null);
-  const [archivos, setArchivos] = useState<File[]>([]);
-  const [filesToDelete, setFilesToDelete] = useState<string[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  const [modal, setModal] = useState({
-    isOpen: false,
-    title: '',
-    message: '',
-    type: 'info' as 'success' | 'error' | 'info'
+  const [form, setForm] = useState<LoanData>({
+    date: null, projectPersonnelId: '', methodId: '', total: 0, formattedTotal: '',
+    firstDiscount: null, numberOfPayments: null, observations: ''
   });
-
-  const closeModal = () => {
-    setModal({ isOpen: false, title: '', message: '', type: 'info' });
-  };
-
-  const { startUpload } = useUploadThing('loanFiles', {
-    onClientUploadComplete: (files) => {
-      console.log("Archivos subidos:", files);
-    },
-    onUploadError: (error) => {
-      setModal({
-        isOpen: true,
-        title: 'Error al subir archivos',
-        message: error.message,
-        type: 'error'
-      });
-    }
-  });
-
-  const validateFiles = (files: File[]): { valid: boolean; message: string } => {
-    const MAX_FILE_SIZE = 4 * 1024 * 1024;
-    const MAX_FILE_COUNT = 3;
-    const ALLOWED_TYPES = [
-      'application/pdf',
-      'image/jpeg',
-      'image/png',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    ];
-
-    if (files.length > MAX_FILE_COUNT) {
-      return { valid: false, message: `No puedes subir más de ${MAX_FILE_COUNT} archivos a la vez.` };
-    }
-
-    for (const file of files) {
-      if (!ALLOWED_TYPES.includes(file.type)) {
-        return { valid: false, message: `Tipo de archivo no permitido: ${file.name}. Solo se permiten PDF, imágenes (JPG/PNG) y archivos de Excel.` };
-      }
-      if (file.size > MAX_FILE_SIZE) {
-        return { valid: false, message: `El archivo ${file.name} excede el tamaño máximo de 4MB.` };
-      }
-    }
-
-    return { valid: true, message: '' };
-  };
+  const [lockedStructure, setLockedStructure] = useState(false);
 
   useEffect(() => {
-    if (registro) {
-      setEditData({
-        ...registro,
-        observations: registro.observations || '',
-        formattedTotal: registro.total !== 0 ? 
-          registro.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '',
-        numberOfPayments: registro.numberOfPayments || null
+    if (!isOpen) return;
+    if (mode === 'edit' && initialData) {
+      setForm({
+        date: initialData.date ? new Date(initialData.date) : null,
+        projectPersonnelId: String(initialData.projectPersonnelId || ''),
+        methodId: initialData.methodId,
+        total: initialData.total,
+        formattedTotal: initialData.total.toLocaleString('en-US', { minimumFractionDigits: 2 }),
+        firstDiscount: initialData.firstDiscount ? new Date(initialData.firstDiscount) : null,
+        numberOfPayments: initialData.numberOfPayments,
+        observations: initialData.observations || ''
       });
-      setArchivos([]);
-      setFilesToDelete([]);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''; 
-      }
-    }
-  }, [registro]);
-
-  const handleClose = () => {
-    setArchivos([]); 
-    setFilesToDelete([]);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''; 
-    }
-    onClose(); 
-  };
-
-  const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    if (!editData) return;
-    
-    const { name, value } = e.target;
-    
-    if (name === 'total') {
-      const formattedValue = formatCurrency(value);
-      setEditData({
-        ...editData,
-        [name]: parseCurrency(formattedValue),
-        formattedTotal: formattedValue
-      });
-    } else if (name === 'numberOfPayments') {
-      setEditData({
-        ...editData,
-        [name]: value === '' ? null : parseInt(value)
-      });
-    } else if (name === 'beneficiary' || name === 'observations') {
-      setEditData({
-        ...editData,
-        [name]: normalizarMayusculas(value || '')
-      });
+      setLockedStructure(initialData.cuotasPagadas > 0);
     } else {
-      setEditData({
-        ...editData,
-        [name]: value || ''
+      setForm({
+        date: null,
+        projectPersonnelId: workers[0] ? String(workers[0].ProjectPersonnelID) : '',
+        methodId: paymentMethods[0] ? String(paymentMethods[0].methodId) : '',
+        total: 0, formattedTotal: '', firstDiscount: null, numberOfPayments: null,
+        observations: ''
       });
+      setLockedStructure(false);
     }
-  };
-
-  const handleDateChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (!editData) return;
-    setEditData({
-      ...editData,
-      date: e.target.value
-    });
-  };
-
-  const handleFirstDiscountChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (!editData) return;
-    setEditData({
-      ...editData,
-      firstDiscount: e.target.value
-    });
-  };
-
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const filesArray = Array.from(e.target.files);
-      
-      const totalFiles = (editData?.archivos?.length || 0) + archivos.length + filesArray.length;
-      if (totalFiles > 3) {
-        setModal({
-          isOpen: true,
-          title: 'Error en archivos',
-          message: 'No puedes tener más de 3 archivos en total (incluyendo los existentes).',
-          type: 'error'
-        });
-        return;
-      }
-
-      const validation = validateFiles(filesArray);
-      if (!validation.valid) {
-        setModal({
-          isOpen: true,
-          title: 'Error en archivos',
-          message: validation.message,
-          type: 'error'
-        });
-        return;
-      }
-
-      setArchivos(prev => [...prev, ...filesArray]);
-    }
-  };
-
-  const removeFile = (index: number) => {
-    setArchivos(prev => {
-      const newFiles = [...prev];
-      newFiles.splice(index, 1);
-      return newFiles;
-    });
-  };
-
-  const formatDateForInput = (dateString: string): string => {
-    if (!dateString) return '';
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
-      return dateString;
-    }
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return '';
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    } catch (e) {
-      console.error('Error formatting date:', e);
-      return '';
-    }
-  };
-
-  const removeExistingFile = async (index: number) => {
-    if (!editData) return;
-    
-    const fileToRemove = editData.archivos[index];
-    
-    if (!fileToRemove.key) {
-      console.error('No se pudo encontrar la key del archivo');
-      return;
-    }
-
-    setFilesToDelete(prev => [...prev, fileToRemove.key]);
-
-    const newArchivos = [...editData.archivos];
-    newArchivos.splice(index, 1);
-    
-    setEditData({
-      ...editData,
-      archivos: newArchivos
-    });
-  };
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!editData) return;
-
-    try {
-      let nuevosArchivos: ArchivoAdjunto[] = [];
-      if (archivos.length > 0) {
-        const validation = validateFiles(archivos);
-        if (!validation.valid) {
-          setModal({
-            isOpen: true,
-            title: 'Error en archivos',
-            message: validation.message,
-            type: 'error'
-          });
-          return;
-        }
-
-        const response = await startUpload(archivos);
-        if (response) {
-          nuevosArchivos = response.map(file => ({
-            nombre: file.name,
-            url: file.ufsUrl || file.url,
-            tipo: file.type,
-            key: file.key
-          }));
-        }
-      }
-
-      if (filesToDelete.length > 0) {
-        try {
-          await fetch('/api/uploadthing', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fileKeys: filesToDelete })
-          });
-        } catch (error) {
-          console.error('Error al eliminar archivos antiguos:', error);
-        }
-      }
-
-      await onSave({
-        ...editData,
-        archivos: [...(editData.archivos || []), ...nuevosArchivos]
-      });
-    } catch (error) {
-      console.error('Error al guardar:', error);
-    }
-  };
-
-  if (!isOpen || !editData) return null;
-
-  return (
-    <>
-      <div className="fixed inset-0 flex items-center justify-center z-[9999] p-4 bg-black/70">
-        <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto animate-fade-in relative z-[10000]">
-          <div className="p-6 pb-4 border-b border-gray-300 flex items-center justify-between sticky top-0 bg-white z-10">
-            <div>
-              <h2 className="text-lg font-bold text-gray-900 tracking-tight">EDITAR REGISTRO</h2>
-              <p className="text-gray-600 mt-1 text-sm">Modifique la información del préstamo.</p>
-            </div>
-            <button
-              onClick={handleClose}
-              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-            >
-              <X className="h-5 w-5 text-gray-500" />
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="p-6">
-            <div className="space-y-6">
-              {/* Información principal */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">
-                  INFORMACIÓN DEL REGISTRO
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                      FECHA DE SOLICITUD *
-                    </label>
-                    <input
-                      type="date"
-                      name="date"
-                      value={formatDateForInput(editData.date)}
-                      onChange={handleDateChange}
-                      className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                      BENEFICIARIO *
-                    </label>
-                    <input
-                      type="text"
-                      name="beneficiary"
-                      value={editData.beneficiary}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Detalles del préstamo */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">
-                  DETALLES DEL PAGO
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                      TOTAL ($) *
-                    </label>
-                    <input
-                      type="text"
-                      name="total"
-                      value={editData.formattedTotal || ''}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                      FECHA 1ER DESCUENTO *
-                    </label>
-                    <input
-                      type="date"
-                      name="firstDiscount"
-                      value={formatDateForInput(editData.firstDiscount)}
-                      onChange={handleFirstDiscountChange}
-                      className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                      NÚMERO DE PAGOS *
-                    </label>
-                    <input
-                      type="number"
-                      name="numberOfPayments"
-                      value={editData.numberOfPayments || ''}
-                      onChange={handleInputChange}
-                      min="1"
-                      className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                      PROCEDENCIA DEL MONTO *
-                    </label>
-                    <select
-                      name="methodId"
-                      value={editData.methodId}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                      required
-                    >
-                      <option value="">SELECCIONA UNA PROCEDENCIA</option>
-                      {paymentMethods.map(method => (
-                        <option key={method.methodId} value={method.methodId.toString()}>
-                          {method.methodName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Archivos */}
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                        ADJUNTAR ARC. (MÁX. 3)
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx"
-                        multiple
-                        onChange={handleFileChange}
-                        ref={fileInputRef}
-                        className="hidden"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                          className="w-full px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-lg hover:border-[#3a6ea5] transition-colors flex items-center justify-center text-gray-500 hover:text-[#3a6ea5] text-sm"
-                      >
-                        <Upload className="h-4 w-4 mr-2" />
-                        SELECCIONAR 
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                  {archivos.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      {archivos.map((file, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
-                          <div className="flex items-center truncate">
-                            <FileIcon type={file.type} size={5} />
-                            <span className="ml-3 text-sm truncate font-medium text-gray-700">{file.name}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeFile(index)}
-                            className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-              </div>
-
-                {editData.archivos && editData.archivos.length > 0 && (
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">
-                      ARCHIVOS ADJUNTOS
-                    </h3>
-                    <div className="space-y-2">
-                      {editData.archivos.map((archivo, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
-                        <div className="flex items-center">
-                            <FileIcon type={archivo.tipo} size={5} />
-                            <a 
-                              href={archivo.url} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="ml-3 text-sm text-[#3a6ea5] hover:underline truncate max-w-xs font-medium"
-                            >
-                              {archivo.nombre}
-                            </a>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeExistingFile(index)}
-                            className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-              {/* Observaciones */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">
-                  OBSERVACIONES
-                </h3>
-                <textarea
-                  name="observations"
-                  value={editData.observations}
-                  onChange={handleInputChange}
-                  rows={3}
-                  className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium resize-none"
-                  placeholder="INGRESE LAS OBSERVACIONES"
-                />
-              </div>
-            </div>
-
-            {/* Botones */}
-            <div className="mt-6 pt-4 border-t border-gray-300 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={handleClose}
-                disabled={isSaving}
-                className="bg-gray-200 text-black font-bold py-2.5 px-6 rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50"
-              >
-                CANCELAR
-              </button>
-              <button
-                type="submit"
-                disabled={isSaving}
-                className="px-6 py-2.5 bg-[#3a6ea5] text-white font-bold rounded-lg hover:bg-[#2d5592] transition-colors flex items-center justify-center min-w-[120px] disabled:opacity-50"
-              >
-                {isSaving ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    GUARDANDO...
-                  </>
-                ) : (
-                  'GUARDAR CAMBIOS'
-                )}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <Modal 
-        isOpen={modal.isOpen}
-        onClose={closeModal}
-        title={modal.title}
-        message={modal.message}
-        type={modal.type}
-      />
-    </>
-  );
-};
-
-// ============ MODAL DE AGREGAR PRÉSTAMO ============
-
-interface AddLoanModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSave: (data: LoanData) => void;
-  isSubmitting: boolean;
-  paymentMethods: PaymentMethod[];
-}
-
-const AddLoanModal: React.FC<AddLoanModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  onSave, 
-  isSubmitting, 
-  paymentMethods 
-}) => {
-  const [loanData, setLoanData] = useState<LoanData>({
-    date: null,
-    beneficiary: '',
-    methodId: '',
-    total: 0,
-    formattedTotal: '',
-    firstDiscount: null,
-    observations: '',
-    numberOfPayments: null,
-    archivos: []
-  });
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [modal, setModal] = useState({
-    isOpen: false,
-    title: '',
-    message: '',
-    type: 'info' as 'success' | 'error' | 'info'
-  });
-
-  const closeModal = () => {
-    setModal({ isOpen: false, title: '', message: '', type: 'info' });
-  };
-
-  const { startUpload } = useUploadThing('loanFiles', {
-    onClientUploadComplete: (files) => {
-      console.log("Archivos subidos:", files);
-    },
-    onUploadError: (error) => {
-      setModal({
-        isOpen: true,
-        title: 'Error al subir archivos',
-        message: error.message,
-        type: 'error'
-      });
-    }
-  });
-
-  const validateFiles = (files: File[]): { valid: boolean; message: string } => {
-    const MAX_FILE_SIZE = 4 * 1024 * 1024;
-    const MAX_FILE_COUNT = 3;
-    const ALLOWED_TYPES = [
-      'application/pdf',
-      'image/jpeg',
-      'image/png',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    ];
-
-    if (files.length > MAX_FILE_COUNT) {
-      return { valid: false, message: `No puedes subir más de ${MAX_FILE_COUNT} archivos a la vez.` };
-    }
-
-    for (const file of files) {
-      if (!ALLOWED_TYPES.includes(file.type)) {
-        return { valid: false, message: `Tipo de archivo no permitido: ${file.name}. Solo se permiten PDF, imágenes (JPG/PNG) y archivos de Excel.` };
-      }
-      if (file.size > MAX_FILE_SIZE) {
-        return { valid: false, message: `El archivo ${file.name} excede el tamaño máximo de 4MB.` };
-      }
-    }
-
-    return { valid: true, message: '' };
-  };
-
-  const handleClose = () => {
-    setLoanData({
-      date: null,
-      beneficiary: '',
-      methodId: paymentMethods.length > 0 ? paymentMethods[0].methodId.toString() : '',
-      total: 0,
-      formattedTotal: '',
-      firstDiscount: null,
-      observations: '',
-      numberOfPayments: null,
-      archivos: []
-    });
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-    onClose();
-  };
-
-  const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    
-    if (name === 'total') {
-      const formattedValue = formatCurrency(value);
-      setLoanData(prev => ({
-        ...prev,
-        [name]: parseCurrency(formattedValue),
-        formattedTotal: formattedValue
-      }));
-    } else if (name === 'numberOfPayments') {
-      setLoanData(prev => ({
-        ...prev,
-        [name]: value === '' ? null : parseInt(value)
-      }));
-    } else if (name === 'beneficiary' || name === 'observations') {
-      setLoanData(prev => ({
-        ...prev,
-        [name]: normalizarMayusculas(value || '')
-      }));
-    } else {
-      setLoanData(prev => ({
-        ...prev,
-        [name]: value || ''
-      }));
-    }
-  };
-
-  const handleDateChange = (date: Date | null, field: 'date' | 'firstDiscount') => {
-    setLoanData(prev => ({
-      ...prev,
-      [field]: date
-    }));
-  };
-
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const filesArray = Array.from(e.target.files);
-      
-      const totalFiles = loanData.archivos.length + filesArray.length;
-      if (totalFiles > 3) {
-        setModal({
-          isOpen: true,
-          title: 'Error en archivos',
-          message: 'No puedes subir más de 3 archivos en total.',
-          type: 'error'
-        });
-        return;
-      }
-
-      const validation = validateFiles(filesArray);
-      if (!validation.valid) {
-        setModal({
-          isOpen: true,
-          title: 'Error en archivos',
-          message: validation.message,
-          type: 'error'
-        });
-        return;
-      }
-
-      setLoanData(prev => ({
-        ...prev,
-        archivos: [...prev.archivos, ...filesArray]
-      }));
-    }
-  };
-
-  const removeFile = (index: number) => {
-    setLoanData(prev => {
-      const newFiles = [...prev.archivos];
-      newFiles.splice(index, 1);
-      return { ...prev, archivos: newFiles };
-    });
-  };
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    await onSave(loanData);
-  };
+  }, [isOpen, mode, initialData, workers, paymentMethods]);
 
   if (!isOpen) return null;
 
+  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    if (name === 'total') {
+      const formatted = formatCurrency(value);
+      setForm(p => ({ ...p, total: parseCurrency(formatted), formattedTotal: formatted }));
+    } else if (name === 'numberOfPayments') {
+      setForm(p => ({ ...p, numberOfPayments: value === '' ? null : parseInt(value) }));
+    } else if (name === 'observations') {
+      setForm(p => ({ ...p, observations: normalizarMayusculas(value) }));
+    } else {
+      setForm(p => ({ ...p, [name]: value }));
+    }
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!form.date || !form.firstDiscount || !form.projectPersonnelId || !form.numberOfPayments) {
+      alert('Completa todos los campos requeridos');
+      return;
+    }
+
+    await onSave({
+      id: initialData?.id,
+      projectPersonnelId: Number(form.projectPersonnelId),
+      date: form.date.toISOString().split('T')[0],
+      firstDiscount: form.firstDiscount.toISOString().split('T')[0],
+      methodId: Number(form.methodId),
+      total: form.total,
+      numberOfPayments: form.numberOfPayments,
+      observations: form.observations
+    });
+  };
+
   return (
-    <>
-      <div className="fixed inset-0 flex items-center justify-center z-[9999] p-4 bg-black/70">
-        <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto animate-fade-in relative z-[10000]">
-          <div className="p-6 pb-4 border-b border-gray-300 flex items-center justify-between sticky top-0 bg-white z-10">
-            <div>
-              <h2 className="text-lg font-bold text-gray-900 tracking-tight">NUEVO PRÉSTAMO</h2>
-              <p className="text-gray-600 mt-1 text-sm">Complete la información del préstamo.</p>
-            </div>
-            <button
-              onClick={handleClose}
-              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-            >
-              <X className="h-5 w-5 text-gray-500" />
-            </button>
+    <div className="fixed inset-0 flex items-center justify-center z-[9999] p-4 bg-black/70">
+      <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto relative z-[10000]">
+        <div className="p-6 pb-4 border-b border-gray-300 flex items-center justify-between sticky top-0 bg-white z-10">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">
+              {mode === 'create' ? 'NUEVO PRÉSTAMO' : 'EDITAR REGISTRO'}
+            </h2>
+            {lockedStructure && (
+              <p className="text-xs text-amber-700 mt-1">
+                Ya hay cuotas pagadas: no puedes cambiar monto, número de pagos ni primera fecha.
+              </p>
+            )}
           </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full" disabled={isSaving}>
+            <X className="h-5 w-5 text-gray-500" />
+          </button>
+        </div>
 
-          <form onSubmit={handleSubmit} className="p-6">
-            <div className="space-y-6">
-              {/* Información principal */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">
-                  INFORMACIÓN DEL REGISTRO
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                      FECHA DE SOLICITUD *
-                    </label>
-                    <input
-                      type="date"
-                      name="date"
-                      value={loanData.date ? loanData.date.toISOString().split('T')[0] : ''}
-                      onChange={(e) => {
-                        const date = e.target.value ? new Date(e.target.value) : null;
-                        handleDateChange(date, 'date');
-                      }}
-                      className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                      BENEFICIARIO *
-                    </label>
-                    <input
-                      type="text"
-                      name="beneficiary"
-                      value={loanData.beneficiary}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Detalles del préstamo */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">
-                  DETALLES DEL PAGO
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                      TOTAL ($) *
-                    </label>
-                    <input
-                      type="text"
-                      name="total"
-                      value={loanData.formattedTotal || ''}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                      FECHA 1ER DESCUENTO *
-                    </label>
-                    <input
-                      type="date"
-                      name="firstDiscount"
-                      value={loanData.firstDiscount ? loanData.firstDiscount.toISOString().split('T')[0] : ''}
-                      onChange={(e) => {
-                        const date = e.target.value ? new Date(e.target.value) : null;
-                        handleDateChange(date, 'firstDiscount');
-                      }}
-                      className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                      NÚMERO DE PAGOS *
-                    </label>
-                    <input
-                      type="number"
-                      name="numberOfPayments"
-                      value={loanData.numberOfPayments || ''}
-                      onChange={handleInputChange}
-                      min="1"
-                      className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                      PROCEDENCIA DEL MONTO *
-                    </label>
-                    <select
-                      name="methodId"
-                      value={loanData.methodId}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
-                      required
-                    >
-                      <option value="">SELECCIONA UNA PROCEDENCIA</option>
-                      {paymentMethods.map(method => (
-                        <option key={method.methodId} value={method.methodId.toString()}>
-                          {method.methodName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Archivos */}
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                    ADJUNTAR ARCHIVOS
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="file"
-                      accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx"
-                      multiple
-                      onChange={handleFileChange}
-                      ref={fileInputRef}
-                      className="hidden"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full px-4 py-2.5 border-2 border-dashed border-gray-300 rounded-lg hover:border-[#3a6ea5] transition-colors flex items-center justify-center text-gray-500 hover:text-[#3a6ea5] text-sm"
-                    >
-                      <Upload className="h-4 w-4 mr-2" />
-                      SELECCIONAR 
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-                  {loanData.archivos.length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      {loanData.archivos.map((file, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
-                          <div className="flex items-center truncate">
-                            <FileIcon type={file.type} size={5} />
-                            <span className="ml-3 text-sm truncate font-medium text-gray-700">{file.name}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeFile(index)}
-                            className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-              </div>
-
-              {/* Observaciones */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">
-                  OBSERVACIONES
-                </h3>
-                <textarea
-                  name="observations"
-                  value={loanData.observations}
-                  onChange={handleInputChange}
-                  rows={3}
-                  className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium resize-none"
-                  placeholder="INGRESE LAS OBSERVACIONES"
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">
+              INFORMACIÓN DEL REGISTRO
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">FECHA DE SOLICITUD *</label>
+                <input
+                  type="date"
+                  value={form.date ? form.date.toISOString().split('T')[0] : ''}
+                  onChange={e => setForm(p => ({ ...p, date: e.target.value ? new Date(e.target.value) : null }))}
+                  className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
+                  disabled={isSaving}
+                  required
                 />
               </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">EMPLEADO *</label>
+                <select
+                  value={form.projectPersonnelId}
+                  onChange={e => setForm(p => ({ ...p, projectPersonnelId: e.target.value }))}
+                  className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
+                  disabled={isSaving}
+                  required
+                >
+                  <option value="">SELECCIONA UN EMPLEADO</option>
+                  {workers.map(w => (
+                    <option key={w.ProjectPersonnelID} value={w.ProjectPersonnelID}>
+                      {w.FullName}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
+          </div>
 
-            {/* Botones */}
-            <div className="mt-6 pt-4 border-t border-gray-300 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={handleClose}
-                disabled={isSubmitting}
-                className="bg-gray-200 text-black font-bold py-2.5 px-6 rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50"
-              >
-                CANCELAR
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="px-6 py-2.5 bg-[#3a6ea5] text-white font-bold rounded-lg hover:bg-[#2d5592] transition-colors flex items-center justify-center min-w-[150px] disabled:opacity-50"
-              >
-                {isSubmitting ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    GUARDANDO...
-                  </>
-                ) : (
-                  'GUARDAR REGISTRO'
-                )}
-              </button>
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">
+              DETALLES DEL PAGO
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">TOTAL ($) *</label>
+                <input
+                  type="text"
+                  value={form.formattedTotal || ''}
+                  onChange={handleChange}
+                  name="total"
+                  disabled={lockedStructure || isSaving}
+                  className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium disabled:bg-gray-100"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">FECHA 1ER DESCUENTO *</label>
+                <input
+                  type="date"
+                  value={form.firstDiscount ? form.firstDiscount.toISOString().split('T')[0] : ''}
+                  onChange={e => setForm(p => ({ ...p, firstDiscount: e.target.value ? new Date(e.target.value) : null }))}
+                  disabled={lockedStructure || isSaving}
+                  className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium disabled:bg-gray-100"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">NÚMERO DE PAGOS *</label>
+                <input
+                  type="number"
+                  name="numberOfPayments"
+                  value={form.numberOfPayments || ''}
+                  onChange={handleChange}
+                  min="1"
+                  disabled={lockedStructure || isSaving}
+                  className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium disabled:bg-gray-100"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">PROCEDENCIA *</label>
+                <select
+                  name="methodId"
+                  value={form.methodId}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
+                  disabled={isSaving}
+                  required
+                >
+                  <option value="">SELECCIONA</option>
+                  {paymentMethods.map(m => (
+                    <option key={m.methodId} value={m.methodId}>{m.methodName}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-          </form>
-        </div>
+          </div>
+
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">
+              OBSERVACIONES
+            </h3>
+            <textarea
+              name="observations"
+              value={form.observations}
+              onChange={handleChange}
+              rows={3}
+              disabled={isSaving}
+              className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium resize-none disabled:bg-gray-100"
+              placeholder="INGRESE LAS OBSERVACIONES"
+            />
+          </div>
+
+          <div className="pt-4 border-t border-gray-300 flex justify-end gap-3">
+            <button type="button" onClick={onClose} disabled={isSaving} className="bg-gray-200 text-black font-bold py-2.5 px-6 rounded-lg hover:bg-gray-300 disabled:opacity-50">
+              CANCELAR
+            </button>
+            <button type="submit" disabled={isSaving} className="px-6 py-2.5 bg-[#3a6ea5] text-white font-bold rounded-lg hover:bg-[#2d5592] flex items-center justify-center min-w-[150px] disabled:opacity-50">
+              {isSaving ? (
+                <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />GUARDANDO...</>
+              ) : mode === 'create' ? 'GUARDAR REGISTRO' : 'GUARDAR CAMBIOS'}
+            </button>
+          </div>
+        </form>
       </div>
-
-      <Modal 
-        isOpen={modal.isOpen}
-        onClose={closeModal}
-        title={modal.title}
-        message={modal.message}
-        type={modal.type}
-      />
-    </>
+    </div>
   );
 };
 
-// ============ COMPONENTE PRINCIPAL ============
+// ============ PÁGINA PRINCIPAL ============
 
 export default function LoansPage({ params }: PageProps) {
   const router = useRouter();
-  
   const { projectId } = use(params);
 
-  // Session management
   const { user, loading: sessionLoading } = useSessionManager();
   useInactivityManager();
 
-  // Estados
   const [loading, setLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isFetchingRegistros, setIsFetchingRegistros] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  // Datos
   const [registros, setRegistros] = useState<LoanRecord[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [workers, setWorkers] = useState<WorkerOption[]>([]);
   const [userData, setUserData] = useState<UserData>({
-    id: 0,
-    usuario: '',
-    tipoUsuario: '',
-    nombre: '',
-    apellido: '',
-    email: '',
-    proyectoAsignado: '',
-    proyectoActivo: false,
-    projectId: null
+    id: 0, usuario: '', tipoUsuario: '', nombre: '', apellido: '', email: '',
+    proyectoAsignado: '', proyectoActivo: false, projectId: null
   });
 
-  // Modales
-  const [modal, setModal] = useState({
-    isOpen: false,
-    title: '',
-    message: '',
-    type: 'info' as 'success' | 'error' | 'info'
-  });
-
-  const [deleteModal, setDeleteModal] = useState({
-    isOpen: false,
-    registro: null as LoanRecord | null,
-    isDeleting: false
-  });
-
-  const [editModal, setEditModal] = useState({
-    isOpen: false,
-    registro: null as LoanRecord | null,
-    isSaving: false
-  });
-
-  const [addLoanModal, setAddLoanModal] = useState({
-    isOpen: false
-  });
-
-  // Upload hook
-  const { startUpload } = useUploadThing('loanFiles', {
-    onClientUploadComplete: (files) => {
-      console.log("Archivos subidos:", files);
-    },
-    onUploadError: (error) => {
-      showModal('Error al subir archivos', error.message, 'error');
-    }
-  });
-
-  // ============ FUNCIONES AUXILIARES ============
-
-  const getMondayOfWeek = (date: Date) => {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    return new Date(d.setDate(diff));
-  };
-
-  const getSundayOfWeek = (date: Date) => {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() + (day === 0 ? 0 : 7 - day);
-    return new Date(d.setDate(diff));
-  };
-
-  const formatDateShort = (date: Date) => {
-    const day = date.getDate().toString().padStart(2, '0');
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
-  };
-
-  const groupRegistrosByWeek = (registros: LoanRecord[]) => {
-    const grouped: { [key: string]: LoanRecord[] } = {};
-    
-    registros.forEach(registro => {
-      const fecha = new Date(registro.date);
-      const monday = getMondayOfWeek(fecha);
-      const sunday = getSundayOfWeek(fecha);
-      const weekKey = `${formatDateShort(monday)} - ${formatDateShort(sunday)}`;
-      
-      if (!grouped[weekKey]) {
-        grouped[weekKey] = [];
-      }
-      grouped[weekKey].push(registro);
-    });
-    
-    return grouped;
-  };
-
+  const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'info' as 'success' | 'error' | 'info' });
+  const closeModal = () => setModal({ isOpen: false, title: '', message: '', type: 'info' });
   const showModal = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setModal({ isOpen: true, title, message, type });
-    if (type === 'success') {
-      setSuccessMessage(message);
-      setTimeout(() => setSuccessMessage(''), 3000);
-    } else if (type === 'error') {
-      setError(message);
-    }
+    if (type === 'success') { setSuccessMessage(message); setTimeout(() => setSuccessMessage(''), 3000); }
+    else if (type === 'error') setError(message);
   };
 
-  const closeModal = () => {
-    setModal({ isOpen: false, title: '', message: '', type: 'info' });
-    setError('');
-  };
+  const [deleteModal, setDeleteModal] = useState({ isOpen: false, registro: null as LoanRecord | null, isDeleting: false });
+  const [loanFormModal, setLoanFormModal] = useState({ isOpen: false, mode: 'create' as 'create' | 'edit', registro: null as LoanRecord | null });
+  const [successModal, setSuccessModal] = useState<{ isOpen: boolean; details: SuccessDetails | null }>({
+    isOpen: false,
+    details: null
+  });
 
-  const validateFiles = (files: File[]): { valid: boolean; message: string } => {
-    const MAX_FILE_SIZE = 4 * 1024 * 1024;
-    const MAX_FILE_COUNT = 3;
-    const ALLOWED_TYPES = [
-      'application/pdf',
-      'image/jpeg',
-      'image/png',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    ];
-
-    if (files.length > MAX_FILE_COUNT) {
-      return { valid: false, message: `No puedes subir más de ${MAX_FILE_COUNT} archivos a la vez.` };
-    }
-
-    for (const file of files) {
-      if (!ALLOWED_TYPES.includes(file.type)) {
-        return { valid: false, message: `Tipo de archivo no permitido: ${file.name}. Solo se permiten PDF, imágenes (JPG/PNG) y archivos de Excel.` };
-      }
-      if (file.size > MAX_FILE_SIZE) {
-        return { valid: false, message: `El archivo ${file.name} excede el tamaño máximo de 4MB.` };
-      }
-    }
-
-    return { valid: true, message: '' };
-  };
-
-  const uploadFiles = async (files: File[]): Promise<ArchivoAdjunto[]> => {
-    try {
-      const validation = validateFiles(files);
-      if (!validation.valid) {
-        showModal('Error en archivos', validation.message, 'error');
-        throw new Error(validation.message);
-      }
-
-      const uploadedFiles = await startUpload(files);
-      
-      if (!uploadedFiles) {
-        throw new Error('No se recibió respuesta del servidor');
-      }
-
-      return uploadedFiles.map(file => ({
-        nombre: file.name,
-        url: file.ufsUrl || file.url,
-        tipo: file.type,
-        key: file.key
-      }));
-    } catch (error) {
-      console.error('Error al subir archivos:', error);
-      throw error;
-    }
-  };
-
-  // ============ FUNCIONES DE API ============
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
 
   const fetchPaymentMethods = useCallback(async () => {
     try {
-      const response = await fetch('/api/project-manager/projects/payment-methods');
-      if (response.ok) {
-        const data = await response.json();
-        setPaymentMethods(data);
-      } else {
-        console.error('Error al obtener métodos de pago');
-      }
-    } catch (error) {
-      console.error('Error al obtener métodos de pago:', error);
-    }
+      const res = await fetch('/api/project-manager/projects/payment-methods');
+      if (res.ok) setPaymentMethods(await res.json());
+    } catch (e) { console.error(e); }
   }, []);
 
-  const fetchRegistros = useCallback(async () => {
+  const fetchWorkers = useCallback(async () => {
     try {
-      if (!projectId) return;
-      
-      setIsFetchingRegistros(true);
-      const response = await fetch(`/api/project-manager/projects/loans?projectId=${projectId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setRegistros(data.map((item: any) => ({
+      const res = await fetch(`/api/project-manager/projects/personnel?projectId=${projectId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setWorkers(
+        data
+          .filter((w: any) => w.Source === 'PROJECT' && w.ProjectPersonnelID)
+          .map((w: any) => ({
+            ProjectPersonnelID: w.ProjectPersonnelID,
+            FullName: w.FullName
+          }))
+      );
+    } catch (e) { console.error(e); }
+  }, [projectId]);
+
+  const fetchRegistros = useCallback(async (): Promise<LoanRecord[]> => {
+    if (!projectId) return [];
+    try {
+      setIsFetching(true);
+      const res = await fetch(`/api/project-manager/projects/loans?projectId=${projectId}`);
+      if (res.ok) {
+        const data = await res.json();
+        const mapped: LoanRecord[] = data.map((item: any) => ({
           id: item.LoansID,
-          beneficiary: item.Beneficiary,
-          methodId: item.MethodID?.toString() || '',
+          projectPersonnelId: String(item.ProjectPersonnelID || ''),
+          employeeName: item.EmployeeName || '—',
+          methodId: String(item.MethodID || ''),
           date: item.Date,
-          total: parseFloat(item.Total),
-          formattedTotal: item.Total?.toLocaleString('en-US', { minimumFractionDigits: 2 }) || '',
+          total: parseFloat(item.Total) || 0,
           firstDiscount: item.FirstDiscount,
-          numberOfPayments: item.NumberOfPayments || null,
+          numberOfPayments: item.NumberOfPayments,
           observations: item.Observations || '',
-          status: item.Status || 0,
-          archivos: item.Archivos ? JSON.parse(item.Archivos) : []
-        })));
-      } else {
-        console.error('Error al obtener préstamos');
-        showModal('Error', 'Error al obtener préstamos', 'error');
+          status: item.Status,
+          archivos: item.Archivos ? JSON.parse(item.Archivos) : [],
+          totalCuotas: item.TotalCuotas,
+          cuotasPagadas: item.CuotasPagadas,
+          cuotasVencidas: item.CuotasVencidas,
+          montoPagado: item.MontoPagado,
+          progreso: item.Progreso
+        }));
+        setRegistros(mapped);
+        return mapped;
       }
-    } catch (error) {
-      console.error('Error al obtener préstamos:', error);
-      showModal('Error', 'Error al obtener préstamos', 'error');
+      return [];
+    } catch (e) {
+      console.error(e);
+      showModal('Error', 'Error al cargar préstamos', 'error');
+      return [];
     } finally {
-      setIsFetchingRegistros(false);
+      setIsFetching(false);
     }
   }, [projectId]);
 
   const fetchUserData = useCallback(async () => {
     try {
-      const response = await fetch('/api/project-manager/auth/sessions');
-      if (response.ok) {
-        const userData = await response.json();
-        setUserData(userData);
-        
-        if (projectId) {
-          const projectIdNum = parseInt(projectId);
-          
-          try {
-            const projectResponse = await fetch(`/api/project-manager/projects/get-project-name?projectId=${projectId}`);
-            if (projectResponse.ok) {
-              const projectData = await projectResponse.json();
-              setUserData(prev => ({
-                ...prev,
-                proyectoAsignado: projectData.projectName || prev.proyectoAsignado,
-                projectId: projectIdNum
-              }));
-            }
-          } catch (error) {
-            console.error('Error al obtener datos del proyecto:', error);
-          }
-          
-          await fetchPaymentMethods();
-        } else {
-          showModal('Error', 'No se especificó un proyecto en la URL', 'error');
-          router.push('/project-manager-dashboard/projects');
-          return;
-        }
+      const res = await fetch('/api/project-manager/auth/sessions');
+      if (!res.ok) { router.push('/'); return; }
+      const data = await res.json();
+      setUserData(data);
+      if (projectId) {
+        await fetchPaymentMethods();
+        await fetchWorkers();
       } else {
-        console.error('Error al obtener datos de usuario');
-        router.push('/');
+        router.push('/project-manager-dashboard/projects');
       }
-    } catch (error) {
-      console.error('Error al obtener datos de usuario:', error);
-      router.push('/');
-    } finally {
-      setLoading(false);
-    }
-  }, [router, fetchPaymentMethods, projectId]);
-
-  // ============ EFFECTS ============
+    } catch (e) { router.push('/'); }
+    finally { setLoading(false); }
+  }, [router, projectId, fetchPaymentMethods, fetchWorkers]);
 
   useEffect(() => {
     if (user && projectId) {
-      fetchRegistros();
       fetchUserData();
+      fetchRegistros();
     }
-  }, [user, projectId, fetchRegistros, fetchUserData]);
+  }, [user, projectId, fetchUserData, fetchRegistros]);
 
-  // ============ HANDLERS ============
-
-  const openDeleteModal = (registro: LoanRecord) => {
-    setDeleteModal({ isOpen: true, registro, isDeleting: false });
-  };
-
-  const closeDeleteModal = () => {
-    setDeleteModal({ isOpen: false, registro: null, isDeleting: false });
-  };
-
-  const openEditModal = (registro: LoanRecord) => {
-    setEditModal({ isOpen: true, registro, isSaving: false });
-  };
-
-  const closeEditModal = () => {
-    setEditModal({ isOpen: false, registro: null, isSaving: false });
-  };
-
-  const openAddLoanModal = () => {
-    setAddLoanModal({ isOpen: true });
-  };
-
-  const closeAddLoanModal = () => {
-    setAddLoanModal({ isOpen: false });
-  };
-
-  const handleAddLoan = async (data: LoanData) => {
-    if (!projectId) {
-      showModal('Error', 'No se ha identificado el proyecto asociado', 'error');
-      return;
-    }
-
-    if (!data.date || !data.firstDiscount) {
-      showModal('Error', 'Las fechas son requeridas', 'error');
-      return;
-    }
-
-    if (data.numberOfPayments === null || data.numberOfPayments === undefined) {
-      showModal('Error', 'El número de pagos es requerido', 'error');
-      return;
-    }
-
-    setIsSubmitting(true);
+  const handleSaveLoan = async (data: any) => {
+    const isEdit = loanFormModal.mode === 'edit';
+    setIsSaving(true);
     try {
-      const fechaFormateada = data.date.toISOString().split('T')[0];
-      const firstDiscountFormateada = data.firstDiscount.toISOString().split('T')[0];
-      
-      const response = await fetch('/api/project-manager/projects/loans', {
-        method: 'POST',
+      const url = isEdit
+        ? `/api/project-manager/projects/loans?id=${data.id}`
+        : '/api/project-manager/projects/loans';
+      const res = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          projectId: projectId,
-          date: fechaFormateada,
-          beneficiary: data.beneficiary,
+          projectId: Number(projectId),
+          projectPersonnelId: data.projectPersonnelId,
+          date: data.date,
+          firstDiscount: data.firstDiscount,
           methodId: data.methodId,
           total: data.total,
-          firstDiscount: firstDiscountFormateada,
           numberOfPayments: data.numberOfPayments,
-          observations: data.observations || ''
+          observations: data.observations
         })
       });
+      let resp: any = null;
+      try { resp = await res.json(); } catch { resp = null; }
+      if (res.ok) {
+        const targetId = isEdit ? data.id : resp.id;
 
-      if (response.ok) {
-        const newLoan = await response.json();
-        const loanId = newLoan.id;
-
-        let archivosSubidos: ArchivoAdjunto[] = [];
-        if (data.archivos.length > 0) {
-          archivosSubidos = await uploadFiles(data.archivos);
-          
-          await fetch(`/api/project-manager/projects/loans?id=${loanId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              date: fechaFormateada,
-              beneficiary: data.beneficiary,
-              methodId: data.methodId,
-              total: data.total,
-              firstDiscount: firstDiscountFormateada,
-              numberOfPayments: data.numberOfPayments,
-              observations: data.observations || '',
-              archivos: archivosSubidos
-            })
-          });
+        // Generar PDF (reemplaza el anterior si existe) y guardarlo en Archivos
+        try {
+          await fetch(
+            `/api/project-manager/projects/loans/generate-pdf?loanId=${targetId}&saveUploadThing=1`
+          );
+        } catch (e) {
+          console.error('Error al generar PDF:', e);
         }
 
-        await fetchRegistros();
-        
-        showModal('Éxito', '¡REGISTRO DE PRÉSTAMO GUARDADO EXITOSAMENTE!', 'success');
-        closeAddLoanModal();
+        // Recargar para obtener la URL guardada
+        const refreshed = await fetchRegistros();
+        const freshRecord = refreshed.find(r => r.id === targetId);
+        const pdfUrl = getPdfUrlFromArchivos(freshRecord?.archivos);
+
+        const worker = workers.find(w => w.ProjectPersonnelID === data.projectPersonnelId);
+        setLoanFormModal({ isOpen: false, mode: 'create', registro: null });
+        setSuccessModal({
+          isOpen: true,
+          details: {
+            LoanID: targetId,
+            ProjectPersonnelID: data.projectPersonnelId,
+            EmployeeName: worker?.FullName || 'Empleado',
+            ApplicationDate: data.date,
+            Amount: data.total,
+            NumberOfPayments: data.numberOfPayments,
+            FirstDiscountDate: data.firstDiscount,
+            observations: data.observations,
+            isEdit,
+            pdfUrl
+          }
+        });
       } else {
-        const errorData = await response.json();
-        showModal('Error', `Error al guardar: ${errorData.message}`, 'error');
+        showModal('Error', resp?.message || `Error ${res.status}`, 'error');
       }
-    } catch (error) {
-      console.error('Error al enviar los datos:', error);
-      showModal('Error', 'Error al conectar con el servidor', 'error');
+    } catch (e) {
+      console.error(e);
+      showModal('Error', 'Error de conexión', 'error');
     } finally {
-      setIsSubmitting(false);
+      setIsSaving(false);
     }
   };
 
   const handleDelete = async () => {
     if (!deleteModal.registro) return;
-    
-    setDeleteModal(prev => ({ ...prev, isDeleting: true }));
-    
+    setDeleteModal(p => ({ ...p, isDeleting: true }));
     try {
-      if (deleteModal.registro.archivos && deleteModal.registro.archivos.length > 0) {
-        const filesToRemove = deleteModal.registro.archivos
-          .filter(archivo => archivo.key)
-          .map(archivo => archivo.key);
-
-        if (filesToRemove.length > 0) {
-          await fetch('/api/uploadthing', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fileKeys: filesToRemove })
-          });
-        }
-      }
-
-      const response = await fetch(`/api/project-manager/projects/loans?id=${deleteModal.registro.id}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
+      const res = await fetch(`/api/project-manager/projects/loans?id=${deleteModal.registro.id}`, { method: 'DELETE' });
+      let resp: any = null;
+      try { resp = await res.json(); } catch { resp = null; }
+      if (res.ok) {
         await fetchRegistros();
-        showModal('Éxito', '¡REGISTRO Y ARCHIVOS DE PRÉSTAMO ELIMINADOS EXITOSAMENTE!', 'success');
+        showModal('Éxito', 'PRÉSTAMO Y CUOTAS ELIMINADOS', 'success');
       } else {
-        const errorData = await response.json();
-        showModal('Error', `Error al eliminar: ${errorData.message}`, 'error');
+        showModal('Error', resp?.message || 'Error al eliminar', 'error');
       }
-    } catch (error) {
-      console.error('Error al eliminar préstamo:', error);
-      showModal('Error', 'Error al conectar con el servidor', 'error');
+    } catch (e) {
+      console.error(e);
+      showModal('Error', 'Error de conexión', 'error');
     } finally {
-      closeDeleteModal();
+      setDeleteModal({ isOpen: false, registro: null, isDeleting: false });
     }
   };
 
-  const handleUpdate = async (data: LoanRecord) => {
-    setEditModal(prev => ({ ...prev, isSaving: true }));
-    
-    try {
-      const fechaFormateada = data.date.includes('T') 
-        ? data.date.split('T')[0] 
-        : data.date;
-      const firstDiscountFormateada = data.firstDiscount.includes('T')
-        ? data.firstDiscount.split('T')[0]
-        : data.firstDiscount;
-
-      const response = await fetch(`/api/project-manager/projects/loans?id=${data.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date: fechaFormateada,
-          beneficiary: data.beneficiary,
-          methodId: data.methodId,
-          total: data.total,
-          firstDiscount: firstDiscountFormateada,
-          numberOfPayments: data.numberOfPayments,
-          observations: data.observations || '',
-          archivos: data.archivos
-        })
-      });
-
-      if (response.ok) {
-        await fetchRegistros();
-        showModal('Éxito', '¡REGISTRO DE PRÉSTAMO ACTUALIZADO EXITOSAMENTE!', 'success');
-      } else {
-        const errorData = await response.json();
-        showModal('Error', `Error al actualizar: ${errorData.message}`, 'error');
-      }
-    } catch (error) {
-      console.error('Error al actualizar préstamo:', error);
-      showModal('Error', 'Error al conectar con el servidor', 'error');
-    } finally {
-      closeEditModal();
-    }
-  };
-
-  // ============ FILTRADO ============
-
-  const filteredRegistros = registros.filter(registro =>
-    registro.beneficiary.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    registro.observations.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    registro.methodId.toLowerCase().includes(searchTerm.toLowerCase())
+  const filtered = registros.filter(r =>
+    r.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    r.observations.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // ============ RENDER ============
+  useEffect(() => {
+    setTotalPages(Math.max(1, Math.ceil(filtered.length / itemsPerPage)));
+    setCurrentPage(1);
+  }, [filtered.length, itemsPerPage]);
 
-  // Loading de sesión
-  if (sessionLoading) {
+  const currentRegistros = filtered.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  if (sessionLoading || loading) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#3a6ea5] mx-auto"></div>
           <p className="mt-4 text-gray-700 font-medium">VERIFICANDO SESIÓN...</p>
@@ -1689,74 +824,84 @@ export default function LoansPage({ params }: PageProps) {
       </div>
     );
   }
-
-  // Si no hay usuario
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
   return (
     <div className="min-h-screen bg-gray-100">
       <AppHeader title="PANEL DE ADMINISTRACIÓN DE PROYECTOS" />
 
-      {/* Modal de confirmación para eliminar */}
-      <DeleteModal
-        isOpen={deleteModal.isOpen}
-        onClose={closeDeleteModal}
-        onConfirm={handleDelete}
-        registro={deleteModal.registro}
-        isDeleting={deleteModal.isDeleting}
-      />
+      <Modal isOpen={modal.isOpen} onClose={closeModal} title={modal.title} message={modal.message} type={modal.type} />
 
-      {/* Modal de edición */}
-      <EditModal
-        isOpen={editModal.isOpen}
-        onClose={closeEditModal}
-        registro={editModal.registro}
-        onSave={handleUpdate}
+      <LoanFormModal
+        isOpen={loanFormModal.isOpen}
+        mode={loanFormModal.mode}
+        onClose={() => setLoanFormModal({ isOpen: false, mode: 'create', registro: null })}
+        onSave={handleSaveLoan}
+        isSaving={isSaving}
         paymentMethods={paymentMethods}
-        isSaving={editModal.isSaving}
+        workers={workers}
+        initialData={loanFormModal.registro}
       />
 
-      {/* Modal de agregar préstamo */}
-      <AddLoanModal
-        isOpen={addLoanModal.isOpen}
-        onClose={closeAddLoanModal}
-        onSave={handleAddLoan}
-        isSubmitting={isSubmitting}
-        paymentMethods={paymentMethods}
+      <SuccessModal
+        isOpen={successModal.isOpen}
+        onClose={() => setSuccessModal({ isOpen: false, details: null })}
+        details={successModal.details}
       />
 
-      {/* Modal de mensajes */}
-      <Modal
-        isOpen={modal.isOpen}
-        onClose={closeModal}
-        title={modal.title}
-        message={modal.message}
-        type={modal.type}
-      />
+      {deleteModal.isOpen && (
+        <div
+          className="fixed inset-0 flex items-center justify-center z-[9999] p-4 bg-black/70"
+          style={{ margin: 0, top: 0, left: 0, right: 0, bottom: 0 }}
+        >
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full animate-fade-in relative z-[10000]">
+            <div className="p-6 pb-4 border-b border-gray-300">
+              <h2 className="text-lg font-bold text-gray-900 tracking-tight flex items-center">
+                <AlertCircle className="h-5 w-5 text-red-600 mr-2" />
+                CONFIRMAR ELIMINACIÓN
+              </h2>
+              <p className="text-sm text-gray-600 mt-2 leading-5">
+                ¿Está seguro que desea eliminar este préstamo? Esta acción no se puede deshacer.
+              </p>
+            </div>
+            <div className="p-6 pt-4 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteModal({ isOpen: false, registro: null, isDeleting: false })}
+                className="bg-gray-200 text-black font-bold py-2.5 px-6 rounded-lg hover:bg-gray-300 transition-colors flex items-center justify-center whitespace-nowrap"
+              >
+                CANCELAR
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleteModal.isDeleting}
+                className="px-6 py-2.5 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center whitespace-nowrap disabled:opacity-50"
+              >
+                {deleteModal.isDeleting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    ELIMINANDO...
+                  </>
+                ) : 'ELIMINAR'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="pt-[72px] pb-[80px] min-h-screen bg-gray-100">
         <div className="w-full px-3 sm:px-4 md:px-6 py-4 sm:py-6 md:py-8 max-w-7xl mx-auto">
-          
-          {/* Header de la página */}
+
           <div className="mb-6">
             <div className="bg-[#3a6ea5] p-4 rounded-lg shadow border border-[#3a6ea5]">
-              <h1 className="text-xl font-bold text-white tracking-tight">
-                PRÉSTAMOS
-              </h1>
+              <h1 className="text-xl font-bold text-white tracking-tight">PRÉSTAMOS</h1>
               <p className="text-sm text-gray-200 mt-1">
-                Administre y visualice todos los registros de préstamos del proyecto.
+                Administre los préstamos a empleados del proyecto y su avance de pagos.
               </p>
-              {projectId && (
-                <p className="text-xs text-gray-300 mt-1">
-                  Proyecto ID: {projectId}
-                </p>
-              )}
             </div>
           </div>
 
-          {/* Mensajes de éxito/error */}
           {successMessage && (
             <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4 animate-fade-in">
               <div className="flex items-center">
@@ -1775,7 +920,6 @@ export default function LoansPage({ params }: PageProps) {
             </div>
           )}
 
-          {/* Barra de herramientas */}
           <div className="flex flex-col md:flex-row gap-4 mb-6">
             <div className="flex-1">
               <div className="relative">
@@ -1784,7 +928,7 @@ export default function LoansPage({ params }: PageProps) {
                 </div>
                 <input
                   type="text"
-                  placeholder="Buscar por beneficiario, observaciones..."
+                  placeholder="Buscar por empleado u observaciones..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(normalizarMayusculas(e.target.value))}
                   className="w-full pl-10 px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
@@ -1801,214 +945,181 @@ export default function LoansPage({ params }: PageProps) {
             </div>
 
             <button
-              onClick={() => {
-                setSearchTerm('');
-                fetchRegistros();
-              }}
+              onClick={() => { setSearchTerm(''); fetchRegistros(); }}
               className="px-4 py-2.5 bg-gray-200 text-black font-bold rounded-lg hover:bg-gray-300 transition-colors flex items-center justify-center whitespace-nowrap"
             >
               <RefreshCw className="h-4 w-4 mr-2" />
-              ACTUALIZAR
+              LIMPIAR
             </button>
 
             <button
-              onClick={openAddLoanModal}
+              onClick={() => setLoanFormModal({ isOpen: true, mode: 'create', registro: null })}
               className="px-6 py-2.5 bg-[#3a6ea5] text-white font-bold rounded-lg hover:bg-[#2d5592] transition-colors flex items-center justify-center whitespace-nowrap"
             >
-              NUEVO PRÉSTAMO
+              NUEVO REGISTRO
             </button>
           </div>
 
-          {/* Tabla de registros */}
           <div className="bg-white rounded-lg shadow border border-gray-300 overflow-hidden">
             <div className="overflow-x-auto">
-              {isFetchingRegistros ? (
-                <div className="flex justify-center items-center py-12">
-                  <div className="flex flex-col items-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#3a6ea5] mb-2"></div>
-                    <p className="text-gray-600">Cargando registros...</p>
-                  </div>
-                </div>
-              ) : filteredRegistros.length > 0 ? (
-                <>
-                  {Object.entries(groupRegistrosByWeek(filteredRegistros)).map(([weekRange, weekRegistros]) => (
-                    <div key={weekRange}>
-                      <div className="px-4 py-3 bg-[#3a6ea5] border-b border-gray-300">
-                        <h3 className="text-sm font-bold text-white flex items-center">
-                          SEMANA {weekRange}
-                        </h3>
-                      </div>
-                      <table className="w-full">
-                        <thead className="bg-gray-100">
-                          <tr>
-                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">FECHA</th>
-                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">BENEFICIARIO</th>
-                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">TOTAL</th>
-                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">1ER DESCUENTO</th>
-                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">N° PAGOS</th>
-                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">PROCEDENCIA</th>
-                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">ARCHIVOS</th>
-                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">OBSERVACIONES</th>
-                            <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 text-center">ACCIONES</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {weekRegistros.map((registro) => {
-                            const paymentMethodName = paymentMethods.find(
-                              m => m.methodId.toString() === registro.methodId
-                            )?.methodName || registro.methodId;
-
-                            return (
-                              <tr key={registro.id} className="hover:bg-gray-50 transition-colors border-b border-gray-300">
-                                <td className="py-3 px-4 text-sm text-gray-800">
-                                  {formatDate(registro.date)}
-                                </td>
-                                <td className="py-3 px-4">
-                                  <div className="text-sm font-medium text-gray-800 uppercase max-w-[150px] truncate" title={registro.beneficiary}>
-                                    {registro.beneficiary}
-                                  </div>
-                                </td>
-                                <td className="py-3 px-4 text-sm text-gray-800 font-medium">
-                                  {formatCurrencyNumber(registro.total)}
-                                </td>
-                                <td className="py-3 px-4 text-sm text-gray-800">
-                                  {formatDate(registro.firstDiscount)}
-                                </td>
-                                <td className="py-3 px-4 text-sm text-gray-800 text-center">
-                                  {registro.numberOfPayments || '-'}
-                                </td>
-                                <td className="py-3 px-4">
-                                  <div className="text-sm text-gray-800 uppercase">{paymentMethodName}</div>
-                                </td>
-                                <td className="py-3 px-4">
-                                  {registro.archivos?.length > 0 ? (
-                                    <div className="flex flex-wrap gap-1">
-                                      {registro.archivos.map((archivo, index) => (
-                                        <a
-                                          key={index}
-                                          href={archivo.url}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="p-1 bg-gray-100 rounded hover:bg-gray-200 transition-colors"
-                                          title={archivo.nombre}
-                                        >
-                                          <FileIcon type={archivo.tipo} size={5} />
-                                        </a>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <span className="text-xs text-gray-400">Sin archivos</span>
-                                  )}
-                                </td>
-                                <td className="py-3 px-4">
-                                  <div className="text-sm text-gray-800 max-w-[150px] truncate" title={registro.observations}>
-                                    {registro.observations || '-'}
-                                  </div>
-                                </td>
-                                <td className="py-3 px-4">
-                                  <div className="flex items-center justify-center gap-2">
-                                    {registro.status === 1 ? (
-                                      <span className="px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full bg-green-100 text-green-800">
-                                        VALIDADO
-                                      </span>
-                                    ) : (
-                                      <>
-                                        <button
-                                          onClick={() => openEditModal(registro)}
-                                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                                          title="Editar préstamo"
-                                        >
-                                          <Edit className="h-4 w-4" />
-                                        </button>
-                                        <button
-                                          onClick={() => openDeleteModal(registro)}
-                                          className="p-2 text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                                          title="Eliminar préstamo"
-                                        >
-                                          <Trash2 className="h-4 w-4" />
-                                        </button>
-                                      </>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  ))}
-                </>
-              ) : (
-                <div className="py-12 text-center">
-                  <FileText className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-sm font-bold text-gray-900">NO HAY REGISTROS</h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    {searchTerm 
-                      ? 'No se encontraron registros que coincidan con tu búsqueda.' 
-                      : 'No se han encontrado registros de préstamos.'}
-                  </p>
-                </div>
-              )}
+              <table className="w-full">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">ID PRÉSTAMO</th>
+                    <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">EMPLEADO</th>
+                    <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">FECHA SOLICITUD</th>
+                    <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">MONTO</th>
+                    <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">PAGOS</th>
+                    <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">1ER DESCUENTO</th>
+                    <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">PROGRESO</th>
+                    <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">PAGADO</th>
+                    <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300">DOCUMENTOS</th>
+                    <th className="py-3 px-4 text-left text-sm font-bold text-gray-700 uppercase border-b border-gray-300 text-center">ACCIONES</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {isFetching ? (
+                    <tr>
+                      <td colSpan={10} className="py-12 text-center">
+                        <div className="flex flex-col items-center justify-center">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#3a6ea5] mb-2"></div>
+                          <p className="text-gray-600">Cargando préstamos...</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="py-12 text-center">
+                        <div className="py-12 text-center">
+                          <FileText className="mx-auto h-12 w-12 text-gray-400" />
+                          <h3 className="mt-2 text-sm font-bold text-gray-900">NO HAY REGISTROS</h3>
+                          <p className="mt-1 text-sm text-gray-500">
+                            {searchTerm 
+                              ? 'No se encontraron registros que coincidan con tu búsqueda.' 
+                              : 'No se han encontrado registros de EPP.'}
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    currentRegistros.map((r) => {
+                      const pdfUrl = getPdfUrlFromArchivos(r.archivos);
+                      return (
+                        <tr key={r.id} className="hover:bg-gray-50 transition-colors border-b border-gray-300">
+                          <td className="py-3 px-4 text-sm text-gray-800 font-medium">{r.id}</td>
+                          <td className="py-3 px-4">
+                            <div className="text-sm font-medium text-gray-800 uppercase">{r.employeeName}</div>
+                          </td>
+                          <td className="py-3 px-4 text-sm text-gray-800">{formatDate(r.date)}</td>
+                          <td className="py-3 px-4 text-sm text-gray-800 font-medium">{formatCurrencyNumber(r.total)}</td>
+                          <td className="py-3 px-4 text-sm text-gray-800">{r.numberOfPayments}</td>
+                          <td className="py-3 px-4 text-sm text-gray-800">{formatDate(r.firstDiscount)}</td>
+                          <td className="py-3 px-4">
+                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
+                              r.cuotasPagadas === r.totalCuotas && r.totalCuotas > 0
+                                ? 'bg-green-100 text-green-800'
+                                : r.cuotasVencidas > 0
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {r.progreso}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-sm text-gray-800 font-medium">{formatCurrencyNumber(r.montoPagado)}</td>
+                          <td className="py-3 px-4">
+                            {pdfUrl ? (
+                              <a
+                                href={pdfUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-gray-700 hover:underline"
+                                title="Ver PDF"
+                              >
+                                Ver
+                              </a>
+                            ) : (
+                              <span className="text-xs text-gray-400">Sin documentos</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center justify-center gap-2">
+                              {r.status === 1 ? (
+                                <span className="px-3 py-1 text-xs font-bold rounded-full bg-green-100 text-green-800">
+                                  VALIDADO
+                                </span>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => setLoanFormModal({ isOpen: true, mode: 'edit', registro: r })}
+                                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                                    title="Editar préstamo"
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => setDeleteModal({ isOpen: true, registro: r, isDeleting: false })}
+                                    className="p-2 text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                    title="Eliminar préstamo"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
+
+            {filtered.length > 0 && totalPages > 1 && (
+              <div className="px-4 py-3 bg-gray-50 border-t border-gray-300 flex items-center justify-between">
+                <div className="text-sm text-gray-700">
+                  MOSTRANDO {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, filtered.length)} DE {filtered.length} REGISTROS
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="p-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="px-4 py-2 bg-[#3a6ea5] text-white rounded-md">
+                    {currentPage} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className="p-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </main>
 
       <Footer />
 
-      {/* Estilos globales */}
       <style jsx global>{`
         @keyframes fade-in {
-          from {
-            opacity: 0;
-            transform: translateY(-10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
         }
-        
-        @keyframes spin {
-          from {
-            transform: rotate(0deg);
-          }
-          to {
-            transform: rotate(360deg);
-          }
-        }
-        
-        .animate-fade-in {
-          animation: fade-in 0.3s ease-out;
-        }
-        
-        .animate-spin {
-          animation: spin 1s linear infinite;
-        }
-        
-        body {
-          padding-top: 0;
-          padding-bottom: 0;
-          margin: 0;
-          overflow-x: hidden;
-        }
-        
-        .fixed.inset-0.z-\\[9999\\] {
-          z-index: 9999 !important;
-        }
-        
-        header, footer {
-          z-index: 50 !important;
-        }
-        
-        body.modal-open {
-          overflow: hidden;
-        }
-        
-        textarea {
-          resize: none;
-        }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .animate-fade-in { animation: fade-in 0.3s ease-out; }
+        .animate-spin { animation: spin 1s linear infinite; }
+        body { padding-top: 0; padding-bottom: 0; margin: 0; overflow-x: hidden; }
+        .fixed.inset-0.z-\\[9999\\] { z-index: 9999 !important; }
+        header, footer { z-index: 50 !important; }
+        body.modal-open { overflow: hidden; }
+        textarea { resize: none; }
       `}</style>
     </div>
   );
