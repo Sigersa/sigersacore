@@ -16,12 +16,14 @@ const calcularAniosAntiguedad = (fechaInicio: string | Date): number => {
     years--;
   }
   
-  return years;
+  return years < 0 ? 0 : years;
 };
 
-// Función para calcular días de vacaciones según años de antigüedad
+// ✅ CORREGIDO: si la antigüedad es 0, devuelve 0 días (no 12)
 const calcularDiasVacaciones = (aniosAntiguedad: number): number => {
-  if (aniosAntiguedad >= 1 && aniosAntiguedad <= 5) {
+  if (aniosAntiguedad <= 0) {
+    return 0;
+  } else if (aniosAntiguedad >= 1 && aniosAntiguedad <= 5) {
     return 12 + (aniosAntiguedad - 1) * 2;
   } else if (aniosAntiguedad >= 6 && aniosAntiguedad <= 10) {
     return 22;
@@ -37,9 +39,8 @@ const calcularDiasVacaciones = (aniosAntiguedad: number): number => {
     return 32;
   } else if (aniosAntiguedad > 35) {
     return 32;
-  } else {
-    return 12;
   }
+  return 0;
 };
 
 // Función para obtener los días totales usados en vacaciones
@@ -52,6 +53,41 @@ const getTotalUsedVacationDays = async (connection: any, employeeId: number): Pr
   );
   
   return (vacations as any[])[0]?.totalUsed || 0;
+};
+
+// Obtener fecha de inicio de contrato para BASE o PROJECT
+const getContractStartDate = async (connection: any, employeeId: number): Promise<string | null> => {
+  // 1. Intentar como BASE
+  const [baseContract] = await connection.execute(
+    `SELECT bc.StartDate
+     FROM basecontracts bc
+     INNER JOIN basepersonnel bp ON bc.BasePersonnelID = bp.BasePersonnelID
+     WHERE bp.EmployeeID = ?
+     ORDER BY bc.StartDate ASC
+     LIMIT 1`,
+    [employeeId]
+  );
+
+  if ((baseContract as any[]).length) {
+    return (baseContract as any[])[0].StartDate;
+  }
+
+  // 2. Intentar como PROJECT
+  const [projectContract] = await connection.execute(
+    `SELECT pc.StartDate
+     FROM projectcontracts pc
+     INNER JOIN projectpersonnel pp ON pc.ProjectPersonnelID = pp.ProjectPersonnelID
+     WHERE pp.EmployeeID = ?
+     ORDER BY pc.StartDate ASC
+     LIMIT 1`,
+    [employeeId]
+  );
+
+  if ((projectContract as any[]).length) {
+    return (projectContract as any[])[0].StartDate;
+  }
+
+  return null;
 };
 
 // Función para generar y guardar el PDF del período de vacaciones (SOLO CUANDO SE COMPLETAN LAS VACACIONES)
@@ -102,7 +138,7 @@ const calculateEndDate = (startDate: string, days: number): string => {
   return endDateObj.toISOString().split('T')[0];
 };
 
-// GET: Obtener todos los empleados con sus períodos de vacaciones
+// GET: Obtener todos los empleados (BASE y PROJECT) con días usados y restantes
 export async function GET(req: NextRequest) {
   let connection;
   
@@ -121,31 +157,57 @@ export async function GET(req: NextRequest) {
 
     connection = await getConnection();
     
-    const [baseEmployees] = await connection.execute(`
+    // Empleados BASE + PROJECT unificados con días usados en una sola consulta
+    const [rows] = await connection.execute(`
       SELECT 
         e.EmployeeID,
         bp.BasePersonnelID,
-        bp.FirstName,
-        bp.LastName,
-        bp.MiddleName,
-        bp.Position,
-        bc.StartDate as ContractStartDate,
-        e.Status
-      FROM basepersonnel bp
-      INNER JOIN employees e ON bp.EmployeeID = e.EmployeeID
+        pp.ProjectPersonnelID,
+        COALESCE(bp.FirstName, pp.FirstName) AS FirstName,
+        COALESCE(bp.LastName, pp.LastName) AS LastName,
+        COALESCE(bp.MiddleName, pp.MiddleName) AS MiddleName,
+        COALESCE(bp.Position, pc.Position) AS Position,
+        COALESCE(bc.StartDate, pc.StartDate) AS ContractStartDate,
+        e.Status,
+        CASE 
+          WHEN bp.BasePersonnelID IS NOT NULL THEN 'BASE'
+          ELSE 'PROJECT'
+        END AS tipo,
+        COALESCE((
+          SELECT SUM(ev.Days) 
+          FROM employeevacations ev 
+          WHERE ev.EmployeeID = e.EmployeeID
+        ), 0) AS TotalUsedDays
+      FROM employees e
+      LEFT JOIN basepersonnel bp ON bp.EmployeeID = e.EmployeeID
       LEFT JOIN basecontracts bc ON bc.BasePersonnelID = bp.BasePersonnelID
+      LEFT JOIN projectpersonnel pp ON pp.EmployeeID = e.EmployeeID
+      LEFT JOIN projectcontracts pc ON pc.ProjectPersonnelID = pp.ProjectPersonnelID
       WHERE e.Status = 1
-      ORDER BY bp.LastName, bp.FirstName
+        AND (bp.BasePersonnelID IS NOT NULL OR pp.ProjectPersonnelID IS NOT NULL)
+      ORDER BY LastName, FirstName
     `);
 
-    const employeesWithVacations = (baseEmployees as any[]).map(employee => {
+    // Eliminar duplicados por EmployeeID (un empleado puede tener varios contratos)
+    const uniqueMap = new Map<number, any>();
+    for (const emp of rows as any[]) {
+      if (!uniqueMap.has(emp.EmployeeID)) {
+        uniqueMap.set(emp.EmployeeID, emp);
+      }
+    }
+
+    const employeesWithVacations = Array.from(uniqueMap.values()).map(employee => {
       const yearsOfSeniority = calcularAniosAntiguedad(employee.ContractStartDate);
       const daysOfVacations = calcularDiasVacaciones(yearsOfSeniority);
-      
+      const totalUsedDays = Number(employee.TotalUsedDays) || 0;
+      const remainingDays = daysOfVacations - totalUsedDays;
+
       return {
         ...employee,
         YearsOfSeniority: yearsOfSeniority,
-        DaysOfVacations: daysOfVacations
+        DaysOfVacations: daysOfVacations,
+        TotalUsedDays: totalUsedDays,
+        RemainingDays: remainingDays
       };
     });
 
@@ -195,22 +257,20 @@ export async function POST(req: NextRequest) {
     await connection.beginTransaction();
     
     try {
-      // Obtener fecha de inicio del contrato
-      const [contractResult] = await connection.execute(
-        `SELECT bc.StartDate 
-         FROM basecontracts bc 
-         INNER JOIN basepersonnel bp ON bc.BasePersonnelID = bp.BasePersonnelID
-         WHERE bp.EmployeeID = ?`,
-        [EmployeeID]
-      );
+      // Obtener fecha de inicio del contrato (BASE o PROJECT)
+      const contractStartDate = await getContractStartDate(connection, EmployeeID);
 
-      if (!(contractResult as any[]).length) {
-        throw new Error('NO SE ENCONTRÓ LA FECHA DE INICIO DEL CONTRATO');
+      if (!contractStartDate) {
+        throw new Error('NO SE ENCONTRÓ LA FECHA DE INICIO DEL CONTRATO PARA ESTE EMPLEADO');
       }
 
-      const contractStartDate = (contractResult as any[])[0].StartDate;
       const yearsOfSeniority = calcularAniosAntiguedad(contractStartDate);
       const daysOfVacations = calcularDiasVacaciones(yearsOfSeniority);
+      
+      // ✅ Validar explícitamente que tenga días disponibles (0 antigüedad → 0 días)
+      if (daysOfVacations <= 0) {
+        throw new Error('EL EMPLEADO NO TIENE DÍAS DE VACACIONES DISPONIBLES (ANTIGÜEDAD MENOR A 1 AÑO)');
+      }
       
       const daysToTake = parseFloat(Days);
       if (isNaN(daysToTake) || daysToTake <= 0) {
@@ -281,7 +341,6 @@ export async function POST(req: NextRequest) {
           
           if (fileUrl) {
             console.log(`PDF generado exitosamente: ${fileUrl}`);
-            // Actualizar FileURL en la base de datos
             const updateConnection = await getConnection();
             try {
               await updateConnection.execute(
@@ -329,7 +388,7 @@ export async function POST(req: NextRequest) {
     
     return NextResponse.json(
       { 
-        message: 'ERROR AL CREAR EL PERÍODO DE VACACIONES',
+        message: error instanceof Error ? error.message : 'ERROR AL CREAR EL PERÍODO DE VACACIONES',
         error: error instanceof Error ? error.message : 'ERROR DESCONOCIDO'
       },
       { status: 500 }
@@ -341,7 +400,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PUT: Actualizar observaciones o edición completa de vacaciones
+// PUT: Acciones GET/UPDATE/SENIORITY/EDIT
 export async function PUT(req: NextRequest) {
   let connection;
   
@@ -360,6 +419,44 @@ export async function PUT(req: NextRequest) {
 
     const url = new URL(req.url);
     const action = url.searchParams.get('action');
+    
+    // Obtener antigüedad de un empleado (BASE o PROJECT)
+    if (action === 'seniority') {
+      const employeeId = url.searchParams.get('employeeId');
+      
+      if (!employeeId) {
+        return NextResponse.json(
+          { error: 'ID DE EMPLEADO REQUERIDO' },
+          { status: 400 }
+        );
+      }
+
+      connection = await getConnection();
+
+      const contractStartDate = await getContractStartDate(connection, parseInt(employeeId));
+
+      if (!contractStartDate) {
+        return NextResponse.json(
+          { error: 'NO SE ENCONTRÓ LA FECHA DE INICIO DEL CONTRATO PARA ESTE EMPLEADO' },
+          { status: 404 }
+        );
+      }
+
+      const yearsOfSeniority = calcularAniosAntiguedad(contractStartDate);
+      const daysOfVacations = calcularDiasVacaciones(yearsOfSeniority);
+      const totalUsedDays = await getTotalUsedVacationDays(connection, parseInt(employeeId));
+
+      return NextResponse.json(
+        { 
+          yearsOfSeniority, 
+          daysOfVacations, 
+          startDate: contractStartDate,
+          totalUsedDays,
+          remainingDays: daysOfVacations - totalUsedDays
+        },
+        { status: 200 }
+      );
+    }
     
     // Obtener períodos de vacaciones de un empleado
     if (action === 'get') {
@@ -466,24 +563,25 @@ export async function PUT(req: NextRequest) {
         );
       }
       
-      const [contractResult] = await connection.execute(
-        `SELECT bc.StartDate 
-         FROM basecontracts bc 
-         INNER JOIN basepersonnel bp ON bc.BasePersonnelID = bp.BasePersonnelID
-         WHERE bp.EmployeeID = ?`,
-        [EmployeeID]
-      );
+      const contractStartDate = await getContractStartDate(connection, EmployeeID);
       
-      if (!(contractResult as any[]).length) {
+      if (!contractStartDate) {
         return NextResponse.json(
           { error: 'NO SE ENCONTRÓ LA FECHA DE INICIO DEL CONTRATO' },
           { status: 400 }
         );
       }
       
-      const contractStartDate = (contractResult as any[])[0].StartDate;
       const yearsOfSeniority = calcularAniosAntiguedad(contractStartDate);
       const daysOfVacations = calcularDiasVacaciones(yearsOfSeniority);
+      
+      // ✅ Validar explícitamente que tenga días disponibles
+      if (daysOfVacations <= 0) {
+        return NextResponse.json(
+          { error: 'EL EMPLEADO NO TIENE DÍAS DE VACACIONES DISPONIBLES (ANTIGÜEDAD MENOR A 1 AÑO)' },
+          { status: 400 }
+        );
+      }
       
       const totalUsedDays = await getTotalUsedVacationDays(connection, EmployeeID);
       const totalWithoutCurrent = totalUsedDays - originalDays;
@@ -498,7 +596,6 @@ export async function PUT(req: NextRequest) {
         );
       }
       
-      // Calcular fecha de término correctamente
       const formattedStartDate = startDateObj.toISOString().split('T')[0];
       const formattedEndDate = calculateEndDate(formattedStartDate, daysToTake);
       
@@ -508,7 +605,6 @@ export async function PUT(req: NextRequest) {
         days: daysToTake
       });
       
-      // Actualizar el registro
       await connection.execute(
         `UPDATE employeevacations 
          SET Days = ?, 
@@ -521,7 +617,6 @@ export async function PUT(req: NextRequest) {
         [Days, Days, formattedStartDate, formattedEndDate, Observations || '', vacationId]
       );
       
-      // Verificar si después de la actualización se completan las vacaciones
       const totalUsedDaysAfter = await getTotalUsedVacationDays(connection, EmployeeID);
       const completedVacations = totalUsedDaysAfter >= daysOfVacations;
       
@@ -530,7 +625,6 @@ export async function PUT(req: NextRequest) {
       
       await connection.commit();
       
-      // Generar nuevo PDF SOLO si se han completado todas las vacaciones
       let newFileUrl = null;
       if (completedVacations) {
         try {
@@ -551,7 +645,6 @@ export async function PUT(req: NextRequest) {
             }
           }
           
-          // Eliminar archivo antiguo si existe y se generó uno nuevo
           if (oldFileUrl && newFileUrl) {
             try {
               const { UTApi } = await import('uploadthing/server');
@@ -570,7 +663,6 @@ export async function PUT(req: NextRequest) {
         }
       } else {
         console.log(`No se genera PDF porque las vacaciones no están completas. Usados: ${totalUsedDaysAfter}/${daysOfVacations}`);
-        // Si no se completan las vacaciones, eliminar archivo antiguo si existe
         if (oldFileUrl) {
           try {
             const { UTApi } = await import('uploadthing/server');
@@ -647,7 +739,6 @@ export async function DELETE(req: NextRequest) {
     
     connection = await getConnection();
     
-    // Obtener FileURL antes de eliminar
     const [record] = await connection.execute(
       'SELECT FileURL FROM employeevacations WHERE VacationID = ?',
       [vacationId]
@@ -660,7 +751,6 @@ export async function DELETE(req: NextRequest) {
       [vacationId]
     );
     
-    // Eliminar archivo de UploadThing si existe
     if (fileUrl) {
       try {
         const { UTApi } = await import('uploadthing/server');
