@@ -296,7 +296,7 @@ function ExpensesVerificationContent() {
         return `${day}-${month}-${year}`;
       };
 
-      a.download = `gastos_${projectNameSafe}_${formatDateForFilename(startDate)}_${formatDateForFilename(endDate)}.xlsx`;
+      a.download = `FT-CP-003_${projectNameSafe}.xlsx`;
 
       document.body.appendChild(a);
       a.click();
@@ -345,32 +345,23 @@ function ExpensesVerificationContent() {
           <div className="mb-6 sm:mb-8">
             <div className="bg-[#3a6ea5] p-4 rounded-lg shadow border border-[#3a6ea5] w-full mb-6">
               <h1 className="text-xl font-bold text-white tracking-tight flex items-center">
-                GENERAR REPORTE DE GASTOS
+                GENERAR COMPROBANTE DE GASTOS
               </h1>
               <p className="text-sm text-gray-200 mt-1">
-                Selecciona el proyecto y define los parámetros del reporte.
+                Selecciona el proyecto y define los parámetros del comprobante.
               </p>
             </div>
 
             {/* Panel Principal */}
             <div className="bg-white rounded-lg shadow border border-gray-300 overflow-hidden">
-
-              {/* Header del Formulario */}
-              <div className="p-6 border-b border-gray-300 bg-gray-50">
-                <h3 className="text-base font-bold text-gray-900 tracking-tight">
-                  Parámetros del Reporte
-                </h3>
-                <p className="text-sm text-gray-600 mt-1">
-                  Todos los campos marcados con (*) son obligatorios.
-                </p>
-              </div>
-
               {/* Contenido del Formulario */}
               <div className="p-6">
-                <div className="space-y-6">
-
                   {/* Proyecto y Fecha del Reporte */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                    <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2 flex items-center">
+                      FILTROS
+                    </h3>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
                         Proyecto *
@@ -415,11 +406,12 @@ function ExpensesVerificationContent() {
                       />
                     </div>
                   </div>
+                  </div>
 
                   {/* Período a Comprobar */}
-                  <div className="pt-2">
-                    <h3 className="text-base font-bold text-gray-900 tracking-tight mb-4">
-                      Período a Comprobar
+                 <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                   <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">
+                      PERÍODO A COMPROBAR
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
@@ -452,9 +444,9 @@ function ExpensesVerificationContent() {
                   </div>
 
                   {/* Sección de Checkboxes */}
-                  <div className="pt-4 border-t border-gray-300">
-                    <h3 className="text-base font-bold text-gray-900 tracking-tight mb-4">
-                      Información Adicional (Opcional)
+                  <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                    <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">
+                      INFORMACIÓN ADICIONAL (OPCIONAL)
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                       <div className="flex items-center space-x-2">
@@ -595,28 +587,28 @@ function ExpensesVerificationContent() {
                   </div>
 
                   {/* Botón de Generar */}
-                  <div className="flex justify-center pt-6 border-t border-gray-300">
+                 <div className="flex justify-center pt-4">
                     <button
                       onClick={handleDownload}
                       disabled={isLoading || isFormInvalid}
-                      className={`px-6 py-3 rounded-lg text-white font-bold tracking-wide transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-[#3a6ea5] focus:ring-offset-2 min-w-[280px] ${
+                       className={`px-6 py-2.5 rounded-lg font-bold transition-colors flex items-center justify-center min-w-[280px] ${
                         isLoading || isFormInvalid
-                          ? 'bg-gray-400 cursor-not-allowed'
-                          : 'bg-[#3a6ea5] hover:bg-[#2d5592]'
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-[#3a6ea5] text-white hover:bg-[#2d5592]'
                       }`}
                     >
                       {isLoading ? (
-                        <span className="flex items-center justify-center space-x-2">
-                          <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
-                          <span className="text-sm">Generando archivo...</span>
-                        </span>
+                        <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      GENERANDO...
+                        </>
                       ) : (
-                        <span className="text-sm">BUSCAR GASTOS Y GENERAR EXCEL</span>
+                        'BUSCAR GASTOS Y GENERAR EXCEL'
                       )}
                     </button>
                   </div>
 
-                </div>
+                
               </div>
             </div>
           </div>
