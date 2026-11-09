@@ -136,13 +136,14 @@ export async function GET(request: Request) {
 
           case 'loans':
             query = `
-              SELECT t.LoansID as id, t.Date, t.Beneficiary, t.Total, t.MethodID,
+              SELECT t.LoansID as id, t.Date, t.Total, t.MethodID,
                      m.MethodName, t.FirstDiscount, t.NumberOfPayments, t.Observations,
                      t.Archivos, t.Status, t.ProjectID, t.ApprovedBy,
                      ${APPROVER_SELECT},
                      p.NameProject,
-                     CONCAT('Préstamo: ', t.Beneficiary) as Concept
+                     CONCAT('Préstamo: ', ' ',ppe.FirstName, ' ',ppe.LastName, ' ', ppe.MiddleName) as Concept
               FROM ${table} t
+              INNER JOIN projectpersonnel ppe ON t.ProjectPersonnelID = ppe.ProjectPersonnelID
               LEFT JOIN paymentmethods m ON t.MethodID = m.MethodID
               LEFT JOIN projects p ON t.ProjectID = p.ProjectID
               ${APPROVER_JOINS}
@@ -216,12 +217,14 @@ export async function GET(request: Request) {
 
           case 'payroll':
             query = `
-              SELECT t.PayrollID as id, t.Date, t.Concept, t.Total, t.MethodID,
+              SELECT t.PayrollID as id, t.Date, t.Total, t.MethodID,
+                     CONCAT('SEMANA: ', ppr.WeekNumber) AS Concept,
                      m.MethodName, t.Observations, t.Archivos,
                      t.status as Status, t.ProjectID, t.ApprovedBy,
                      ${APPROVER_SELECT},
                      p.NameProject
               FROM ${table} t
+              INNER JOIN payroll_periods ppr ON ppr.PayrollPeriodID = t.PayrollPeriodID
               LEFT JOIN paymentmethods m ON t.MethodID = m.MethodID
               LEFT JOIN projects p ON t.ProjectID = p.ProjectID
               ${APPROVER_JOINS}
