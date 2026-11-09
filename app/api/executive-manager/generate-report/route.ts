@@ -312,21 +312,22 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'payroll') {
       query = `
         SELECT 
           t.PayrollID,
           t.Date,
-          t.Concept,
+          CONCAT('SEMANA: ', pp.WeekNumber) AS 'Concepto',
           t.Total,
           pm.MethodName,
           t.Observations,
           t.Archivos
         FROM ${tableName} t 
+        INNER JOIN payroll_periods pp ON pp.PayrollPeriodID = t.PayrollPeriodID
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'toolsequipment') {
       query = `
@@ -340,7 +341,7 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'personneltransfer') {
       query = `
@@ -356,7 +357,7 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'infrastructuretransfer') {
       query = `
@@ -372,14 +373,14 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'loans') {
       query = `
         SELECT 
           t.LoansID,
           t.Date,
-          t.Beneficiary,
+          CONCAT_WS(' ', pp.FirstName, pp.LastName, pp.MiddleName) AS 'Beneficiary',
           t.Total,
           t.FirstDiscount,
           t.NumberOfPayments,
@@ -387,8 +388,9 @@ async function exportTableToSheet(
           t.Observations,
           t.Archivos
         FROM ${tableName} t 
+        INNER JOIN projectpersonnel pp ON pp.ProjectPersonnelID = t.ProjectPersonnelID
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'administrativeconsumable') {
       query = `
@@ -402,7 +404,7 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'epp') {
       query = `
@@ -416,7 +418,7 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'localtransportationfuel') {
       query = `
@@ -432,7 +434,7 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'financingservices') {
       query = `
@@ -446,7 +448,7 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'fuelclient') {
       query = `
@@ -461,7 +463,7 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'consumableclient') {
       query = `
@@ -475,7 +477,7 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'waterice') {
       query = `
@@ -489,7 +491,7 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'operativeconsumable') {
       query = `
@@ -503,7 +505,7 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'infrastructureservices') {
       query = `
@@ -517,7 +519,7 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'installationmaterials') {
       query = `
@@ -531,7 +533,7 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else if (tableName === 'outsourcedservices') {
       query = `
@@ -545,7 +547,7 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ?
       `;
     } else if (tableName === 'uniondues') {
       query = `
@@ -561,7 +563,7 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     } else {
       // Consulta genérica para tablas no especificadas
@@ -572,7 +574,7 @@ async function exportTableToSheet(
           t.Archivos
         FROM ${tableName} t 
         LEFT JOIN paymentmethods pm ON t.MethodID = pm.MethodID 
-        WHERE t.ProjectID = ? AND t.Status = 1
+        WHERE t.ProjectID = ? 
       `;
     }
 
