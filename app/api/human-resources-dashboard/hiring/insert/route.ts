@@ -86,19 +86,19 @@ async function uploadFileToUploadThing(fileBuffer: ArrayBuffer, fileName: string
     const blob = new Blob([fileBuffer], { type: fileType });
     const file = new File([blob], fileName, { type: fileType });
     const uploadResponse = await utapi.uploadFiles([file]);
-    
+
     if (!uploadResponse || !uploadResponse[0]) throw new Error('No se recibió respuesta de UploadThing');
     const uploadedFile = uploadResponse[0];
-    
+
     if (uploadedFile.error) throw new Error(uploadedFile.error.message || 'Error al subir el archivo');
-    
+
     let fileUrl: string | undefined;
     if ('ufsUrl' in uploadedFile) fileUrl = (uploadedFile as any).ufsUrl;
     else if (uploadedFile.data?.url) fileUrl = uploadedFile.data.url;
     else if ('serverData' in uploadedFile) fileUrl = (uploadedFile as any).serverData?.url;
-    
+
     if (!fileUrl) throw new Error('No se pudo obtener la URL del archivo subido. Estructura inesperada.');
-    
+
     console.log('Archivo subido exitosamente a:', fileUrl);
     return fileUrl;
   } catch (error) {
@@ -155,27 +155,23 @@ async function generateFT_RH_29_PDF(empleadoId: string, baseUrl: string): Promis
   }
 }
 
-// Función para obtener las fechas del proyecto
-async function getProjectDates(connection: any, projectId: number): Promise<{ startDate: string | null, endDate: string | null }> {
+// Función para validar que el proyecto exista y esté activo (sin exigir fechas)
+async function validateProjectActive(connection: any, projectId: number): Promise<boolean> {
   try {
-    const [projectRows] = await connection.execute(
-      `SELECT StartDate, EndDate FROM projects WHERE ProjectID = ? AND Status = 0`,
+    const [rows] = await connection.execute(
+      `SELECT ProjectID FROM projects WHERE ProjectID = ? AND Status = 0`,
       [projectId]
     );
-    
-    if (Array.isArray(projectRows) && projectRows.length > 0) {
-      return { startDate: projectRows[0].StartDate, endDate: projectRows[0].EndDate };
-    }
-    return { startDate: null, endDate: null };
+    return Array.isArray(rows) && rows.length > 0;
   } catch (error) {
-    console.error('Error al obtener fechas del proyecto:', error);
-    return { startDate: null, endDate: null };
+    console.error('Error al validar proyecto:', error);
+    return false;
   }
 }
 
 export async function POST(request: NextRequest) {
   let connection;
-  
+
   try {
     const sessionId = request.cookies.get("session")?.value;
     if (!sessionId) return NextResponse.json({ success: false, message: 'NO AUTORIZADO' }, { status: 401 });
@@ -185,7 +181,7 @@ export async function POST(request: NextRequest) {
     if (user.UserTypeID !== 2) return NextResponse.json({ success: false, message: 'ACCESO DENEGADO' }, { status: 403 });
 
     const formData = await request.json();
-    
+
     const requiredFields = ['nombre', 'apellidoPaterno', 'nss', 'curp', 'rfc', 'fechaNacimiento', 'puesto', 'salario', 'calle', 'numeroExterior', 'colonia', 'municipio', 'estado', 'codigoPostal'];
     for (const field of requiredFields) {
       if (!formData[field]?.trim()) {
@@ -201,9 +197,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'EL PROYECTO ES REQUERIDO PARA PERSONAL DE PROYECTO' }, { status: 400 });
     }
 
+    // ⚠️ VALIDACIÓN: para personal de proyecto, el usuario debe enviar
+    //    fechaInicioContrato y fechaFinContrato manualmente.
+    if (formData.tipoPersonal === 'proyecto') {
+      if (!formData.fechaInicioContrato?.trim()) {
+        return NextResponse.json({ success: false, message: 'LA FECHA DE INICIO DE CONTRATO ES REQUERIDA PARA PERSONAL DE PROYECTO' }, { status: 400 });
+      }
+      if (!formData.fechaFinContrato?.trim()) {
+        return NextResponse.json({ success: false, message: 'LA FECHA DE FIN DE CONTRATO ES REQUERIDA PARA PERSONAL DE PROYECTO' }, { status: 400 });
+      }
+      if (formData.fechaFinContrato < formData.fechaInicioContrato) {
+        return NextResponse.json({ success: false, message: 'LA FECHA DE FIN DE CONTRATO NO PUEDE SER MENOR QUE LA FECHA DE INICIO' }, { status: 400 });
+      }
+      // ⚠️ NUEVA VALIDACIÓN: residencia obligatoria para proyecto
+      if (!formData.residencia?.trim()) {
+        return NextResponse.json({ success: false, message: 'LA RESIDENCIA ES REQUERIDA PARA PERSONAL DE PROYECTO' }, { status: 400 });
+      }
+      const residenciaUpper = formData.residencia.trim().toUpperCase();
+      if (residenciaUpper !== 'LOCAL' && residenciaUpper !== 'FORANEO' && residenciaUpper !== 'FORÁNEO') {
+        return NextResponse.json({ success: false, message: 'LA RESIDENCIA DEBE SER "LOCAL" O "FORANEO"' }, { status: 400 });
+      }
+    }
+
     connection = await getConnection();
 
-    if (formData.tipoPersonal === 'base' && formData.jefeDirectoId) {
+    // ✅ VALIDACIÓN: solo busca en employees si el ID es > 0 (evita que 0 falle)
+    if (
+      formData.tipoPersonal === 'base' &&
+      formData.jefeDirectoId !== undefined &&
+      formData.jefeDirectoId !== null &&
+      formData.jefeDirectoId !== '' &&
+      Number(formData.jefeDirectoId) > 0
+    ) {
       const jefeDirectoId = parseInt(formData.jefeDirectoId);
       const [jefeRows] = await connection.execute(
         `SELECT EmployeeID FROM employees WHERE EmployeeID = ? AND Status = 1`,
@@ -243,13 +268,13 @@ export async function POST(request: NextRequest) {
         }
       }
     }
-    
+
     const duplicateCheck = await checkDuplicatesBeforeInsert(connection, formData.nss, formData.curp, formData.rfc);
     if (duplicateCheck.exists) {
       await connection.release();
       return NextResponse.json({ success: false, message: duplicateCheck.message, field: duplicateCheck.field }, { status: 400 });
     }
-    
+
     await connection.beginTransaction();
 
     try {
@@ -260,7 +285,19 @@ export async function POST(request: NextRequest) {
       let warningFileURL: string | null = null;
       let letterFileURL: string | null = null;
       let agreementFileURL: string | null = null;
-      let jefeDirectoId = formData.tipoPersonal === 'base' && formData.jefeDirectoId ? parseInt(formData.jefeDirectoId) : null;
+      let jefeDirectoId: number | null = null;
+
+      // ✅ CONVERSIÓN CORREGIDA: "0" o vacío → null (sin jefe asignado)
+      if (
+        formData.tipoPersonal === 'base' &&
+        formData.jefeDirectoId !== undefined &&
+        formData.jefeDirectoId !== null &&
+        formData.jefeDirectoId !== ''
+      ) {
+        const parsed = parseInt(formData.jefeDirectoId);
+        // Solo IDs > 0 se guardan; si es 0, NaN o negativo → null
+        jefeDirectoId = !isNaN(parsed) && parsed > 0 ? parsed : null;
+      }
 
       if (formData.tipoPersonal === 'base') {
         employeeType = 'BASE';
@@ -363,10 +400,11 @@ export async function POST(request: NextRequest) {
         employeeType = 'PROJECT';
         const proyectoId = parseInt(formData.proyectoId);
         if (isNaN(proyectoId)) throw new Error('ID DE PROYECTO INVÁLIDO');
-        
-        const projectDates = await getProjectDates(connection, proyectoId);
-        if (!projectDates.startDate || !projectDates.endDate) throw new Error('EL PROYECTO SELECCIONADO NO TIENE FECHAS VÁLIDAS O NO ESTÁ ACTIVO');
-        
+
+        // Solo validamos que el proyecto exista y esté activo.
+        const projectActive = await validateProjectActive(connection, proyectoId);
+        if (!projectActive) throw new Error('EL PROYECTO SELECCIONADO NO EXISTE O NO ESTÁ ACTIVO');
+
         const [projectPersonnelResult] = await connection.execute(
           `INSERT INTO projectpersonnel (FirstName, LastName, MiddleName) VALUES (?, ?, ?)`,
           [normalizarMayusculas(formData.nombre.trim()), normalizarMayusculas(formData.apellidoPaterno.trim()), normalizarMayusculas(formData.apellidoMaterno ? formData.apellidoMaterno.trim() : '')]
@@ -387,10 +425,26 @@ export async function POST(request: NextRequest) {
           ]
         );
 
+        // ============================================================
+        // Guardamos StartDate, EndDate y RESIDENCE (Residence) en
+        // projectcontracts usando las fechas que el usuario ingresó en
+        // el formulario y el valor del select de residencia.
+        // ============================================================
+        const residenciaValue = normalizarMayusculas((formData.residencia || '').trim());
+
         await connection.execute(
-          `INSERT INTO projectcontracts (ProjectPersonnelID, SalaryIMSS, Position, Salary, WorkSchedule, ProjectID, ContractFileURL, WarningFileURL, LetterFileURL, AgreementFileURL, Status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+          `INSERT INTO projectcontracts (ProjectPersonnelID, StartDate, EndDate, SalaryIMSS, Position, Salary, WorkSchedule, ProjectID, Residence, ContractFileURL, WarningFileURL, LetterFileURL, AgreementFileURL, Status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
           [
-            projectPersonnelId, formData.salaryIMSS ? parseFloat(formData.salaryIMSS) : null, normalizarMayusculas(formData.puesto.trim()), parseFloat(formData.salario.replace(/[^0-9.-]+/g, "")) || 0, normalizarMayusculas(formData.horarioLaboral || ''), proyectoId, null, null, null, null
+            projectPersonnelId,
+            formData.fechaInicioContrato,
+            formData.fechaFinContrato,
+            formData.salaryIMSS ? parseFloat(formData.salaryIMSS) : null,
+            normalizarMayusculas(formData.puesto.trim()),
+            parseFloat(formData.salario.replace(/[^0-9.-]+/g, "")) || 0,
+            normalizarMayusculas(formData.horarioLaboral || ''),
+            proyectoId,
+            residenciaValue,
+            null, null, null, null
           ]
         );
 
@@ -429,27 +483,27 @@ export async function POST(request: NextRequest) {
       await connection.commit();
 
       try {
-        // ✅ AQUÍ ESTÁ LA MAGIA: Usamos el origen real de la petición
+        // ✅ Usamos el origen real de la petición
         const baseUrl = request.nextUrl.origin;
 
         const ftRh02PdfBuffer = await generateFT_RH_02_PDF(employeeId.toString(), baseUrl);
         const ftRh02FileName = `FT-RH-02_${formData.tipoPersonal}_${employeeId}_${Date.now()}.pdf`;
         contractFileURL = await uploadFileToUploadThing(ftRh02PdfBuffer, ftRh02FileName, 'application/pdf');
-        
+
         const ftRh04PdfBuffer = await generateFT_RH_04_PDF(employeeId.toString(), baseUrl);
         const ftRh04FileName = `FT-RH-04_${formData.tipoPersonal}_${employeeId}_${Date.now()}.pdf`;
         warningFileURL = await uploadFileToUploadThing(ftRh04PdfBuffer, ftRh04FileName, 'application/pdf');
-        
+
         const ftRh07PdfBuffer = await generateFT_RH_07_PDF(employeeId.toString(), baseUrl);
         const ftRh07FileName = `FT-RH-07_${formData.tipoPersonal}_${employeeId}_${Date.now()}.pdf`;
         letterFileURL = await uploadFileToUploadThing(ftRh07PdfBuffer, ftRh07FileName, 'application/pdf');
-        
+
         const ftRh29PdfBuffer = await generateFT_RH_29_PDF(employeeId.toString(), baseUrl);
         const ftRh29FileName = `FT-RH-29_${formData.tipoPersonal}_${employeeId}_${Date.now()}.pdf`;
         agreementFileURL = await uploadFileToUploadThing(ftRh29PdfBuffer, ftRh29FileName, 'application/pdf');
-        
+
         await connection.beginTransaction();
-        
+
         if (employeeType === 'BASE') {
           await connection.execute(
             `UPDATE basecontracts SET ContractFileURL = ?, WarningFileURL = ?, LetterFileURL = ?, AgreementFileURL = ? WHERE BasePersonnelID = ?`,
@@ -461,9 +515,9 @@ export async function POST(request: NextRequest) {
             [contractFileURL, warningFileURL, letterFileURL, agreementFileURL, employeeIdNumber]
           );
         }
-        
+
         await connection.commit();
-        
+
         return NextResponse.json({
           success: true,
           message: formData.tipoPersonal === 'base' ? 'PERSONAL BASE REGISTRADO EXITOSAMENTE' : 'PERSONAL DE PROYECTO REGISTRADO EXITOSAMENTE',
@@ -514,19 +568,19 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error('Error al registrar empleado:', error);
     let errorMessage = 'ERROR AL REGISTRAR EL EMPLEADO. POR FAVOR, INTENTE NUEVAMENTE.';
-    
+
     if (error instanceof Error) {
       if (error.message.includes('ER_BAD_FIELD_ERROR')) errorMessage = 'ERROR EN LA ESTRUCTURA DE LA BASE DE DATOS. CONTACTE AL ADMINISTRADOR.';
       else if (error.message.includes('ER_NO_SUCH_TABLE')) errorMessage = 'ERROR: TABLAS NO ENCONTRADAS EN LA BASE DE DATOS.';
       else if (error.message.includes('ECONNREFUSED')) errorMessage = 'ERROR DE CONEXIÓN A LA BASE DE DATOS. VERIFIQUE EL SERVIDOR.';
       else if (error.message.includes('foreign key constraint')) errorMessage = 'ERROR: EL PROYECTO O JEFE DIRECTO SELECCIONADO NO EXISTE EN LA BASE DE DATOS.';
-      else if (error.message.includes('NO TIENE FECHAS VÁLIDAS')) errorMessage = error.message;
+      else if (error.message.includes('NO EXISTE O NO ESTÁ ACTIVO')) errorMessage = error.message;
     }
-    
-    return NextResponse.json({ 
-      success: false, 
-      message: errorMessage, 
-      error: process.env.NODE_ENV === 'development' && error instanceof Error ? error.message : undefined 
+
+    return NextResponse.json({
+      success: false,
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' && error instanceof Error ? error.message : undefined
     }, { status: 500 });
   } finally {
     if (connection) {
