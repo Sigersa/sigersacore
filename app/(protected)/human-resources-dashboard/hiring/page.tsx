@@ -41,6 +41,7 @@ type FormDataBase = {
   umf: string;
   salaryIMSS: string;
   jefeDirectoId: string;
+  residencia: string; // ⚠️ NUEVO: solo aplica a proyecto
 };
 
 // Tipo para formulario de proyecto
@@ -49,7 +50,7 @@ type FormDataProyecto = FormDataBase & {
 };
 
 // Tipo para formulario base
-type FormDataPersonalBase = Omit<FormDataBase, 'fechaFinContrato' | 'proyectoId'>;
+type FormDataPersonalBase = Omit<FormDataBase, 'fechaFinContrato' | 'proyectoId' | 'residencia'>;
 
 // Tipo para beneficiario
 type Beneficiario = {
@@ -145,7 +146,8 @@ const fieldNames: Record<string, string> = {
   municipio: 'Municipio',
   estado: 'Estado',
   codigoPostal: 'Código Postal',
-  jefeDirectoId: 'Jefe Directo'
+  jefeDirectoId: 'Jefe Directo',
+  residencia: 'Residencia'
 };
 
 // Mapa de nombres de documentos
@@ -206,7 +208,8 @@ export default function SystemAdminDashboard() {
     umf: '',
     salaryIMSS: '',
     proyectoId: '',
-    jefeDirectoId: ''
+    jefeDirectoId: '',
+    residencia: '' // ⚠️ NUEVO
   });
 
   // Estados para el formulario de personal base
@@ -361,31 +364,18 @@ export default function SystemAdminDashboard() {
     }
   };
 
-  // Función para manejar cambio de proyecto - CARGA AUTOMÁTICA DE FECHAS
+  // ============================================================
+  // ⚠️ CAMBIO IMPORTANTE: ya NO se cargan automáticamente las fechas
+  //    del proyecto. El usuario las ingresa manualmente.
+  //    Solo se actualiza el proyectoId seleccionado.
+  // ============================================================
   const handleProjectChange = (e: ChangeEvent<HTMLSelectElement>) => {
     const projectId = e.target.value;
-    
-    if (projectId) {
-      const selectedProject = proyectos.find(p => p.ProjectID === parseInt(projectId));
-      if (selectedProject) {
-        const startDate = selectedProject.StartDate ? new Date(selectedProject.StartDate).toISOString().split('T')[0] : '';
-        const endDate = selectedProject.EndDate ? new Date(selectedProject.EndDate).toISOString().split('T')[0] : '';
-        
-        setFormDataProyecto(prev => ({ 
-          ...prev, 
-          proyectoId: projectId,
-          fechaInicioContrato: startDate,
-          fechaFinContrato: endDate
-        }));
-      }
-    } else {
-      setFormDataProyecto(prev => ({ 
-        ...prev, 
-        proyectoId: '',
-        fechaInicioContrato: '',
-        fechaFinContrato: ''
-      }));
-    }
+
+    setFormDataProyecto(prev => ({
+      ...prev,
+      proyectoId: projectId
+    }));
   };
 
   // Función para verificar duplicados en tiempo real
@@ -413,7 +403,7 @@ export default function SystemAdminDashboard() {
 
       setDuplicateErrors(prev => {
         const filtered = prev.filter(error => error.field !== field);
-        
+
         if (data.exists) {
           return [
             ...filtered,
@@ -423,7 +413,7 @@ export default function SystemAdminDashboard() {
             }
           ];
         }
-        
+
         return filtered;
       });
     } catch (error) {
@@ -443,7 +433,7 @@ export default function SystemAdminDashboard() {
     try {
       const response = await fetch(`/api/human-resources-dashboard/hiring/document-urls/${employeeId}`);
       const data = await response.json();
-      
+
       if (response.ok && data.success) {
         return {
           contractFileURL: data.contractFileURL,
@@ -463,13 +453,13 @@ export default function SystemAdminDashboard() {
   const handleDownloadFile = async (url: string, filename: string) => {
     try {
       setDownloading(true);
-      
+
       const response = await fetch(url);
-      
+
       if (!response.ok) {
         throw new Error('Error al descargar el archivo');
       }
-      
+
       const blob = await response.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -479,7 +469,7 @@ export default function SystemAdminDashboard() {
       a.click();
       window.URL.revokeObjectURL(downloadUrl);
       document.body.removeChild(a);
-      
+
       setDownloading(false);
     } catch (error) {
       console.error('Error al descargar archivo:', error);
@@ -491,12 +481,12 @@ export default function SystemAdminDashboard() {
   // Función para descargar todos los PDFs en un ZIP
   const handleDownloadAllPDFs = async () => {
     if (!successDetails) return;
-    
+
     try {
       setDownloadingZip(true);
-      
+
       const zip = new JSZip();
-      
+
       if (successDetails.ftRh02PdfDownloadUrl) {
         const response = await fetch(successDetails.ftRh02PdfDownloadUrl);
         if (response.ok) {
@@ -504,7 +494,7 @@ export default function SystemAdminDashboard() {
           zip.file(`FT-RH-02_${successDetails.empleadoId}.pdf`, blob);
         }
       }
-      
+
       if (successDetails.ftRh04PdfDownloadUrl) {
         const response = await fetch(successDetails.ftRh04PdfDownloadUrl);
         if (response.ok) {
@@ -512,7 +502,7 @@ export default function SystemAdminDashboard() {
           zip.file(`FT-RH-04_${successDetails.empleadoId}.pdf`, blob);
         }
       }
-      
+
       if (successDetails.ftRh07PdfDownloadUrl) {
         const response = await fetch(successDetails.ftRh07PdfDownloadUrl);
         if (response.ok) {
@@ -520,7 +510,7 @@ export default function SystemAdminDashboard() {
           zip.file(`FT-RH-07_${successDetails.empleadoId}.pdf`, blob);
         }
       }
-      
+
       if (successDetails.ftRh29PdfDownloadUrl) {
         const response = await fetch(successDetails.ftRh29PdfDownloadUrl);
         if (response.ok) {
@@ -528,7 +518,7 @@ export default function SystemAdminDashboard() {
           zip.file(`FT-RH-29_${successDetails.empleadoId}.pdf`, blob);
         }
       }
-      
+
       const content = await zip.generateAsync({ type: "blob" });
       const downloadUrl = window.URL.createObjectURL(content);
       const a = document.createElement('a');
@@ -538,7 +528,7 @@ export default function SystemAdminDashboard() {
       a.click();
       window.URL.revokeObjectURL(downloadUrl);
       document.body.removeChild(a);
-      
+
       setDownloadingZip(false);
     } catch (error) {
       console.error('Error al crear ZIP:', error);
@@ -550,12 +540,12 @@ export default function SystemAdminDashboard() {
   // Función para descargar todos los editables en un ZIP
   const handleDownloadAllEditables = async () => {
     if (!successDetails) return;
-    
+
     try {
       setDownloadingZip(true);
-      
+
       const zip = new JSZip();
-      
+
       if (successDetails.ftRh02WordUrl) {
         const response = await fetch(successDetails.ftRh02WordUrl);
         if (response.ok) {
@@ -563,7 +553,7 @@ export default function SystemAdminDashboard() {
           zip.file(`FT-RH-02_${successDetails.empleadoId}.docx`, blob);
         }
       }
-      
+
       if (successDetails.ftRh04ExcelUrl) {
         const response = await fetch(successDetails.ftRh04ExcelUrl);
         if (response.ok) {
@@ -571,7 +561,7 @@ export default function SystemAdminDashboard() {
           zip.file(`FT-RH-04_${successDetails.empleadoId}.xlsx`, blob);
         }
       }
-      
+
       if (successDetails.ftRh07WordUrl) {
         const response = await fetch(successDetails.ftRh07WordUrl);
         if (response.ok) {
@@ -579,7 +569,7 @@ export default function SystemAdminDashboard() {
           zip.file(`FT-RH-07_${successDetails.empleadoId}.docx`, blob);
         }
       }
-      
+
       if (successDetails.ftRh29WordUrl) {
         const response = await fetch(successDetails.ftRh29WordUrl);
         if (response.ok) {
@@ -587,7 +577,7 @@ export default function SystemAdminDashboard() {
           zip.file(`FT-RH-29_${successDetails.empleadoId}.docx`, blob);
         }
       }
-      
+
       const content = await zip.generateAsync({ type: "blob" });
       const downloadUrl = window.URL.createObjectURL(content);
       const a = document.createElement('a');
@@ -597,7 +587,7 @@ export default function SystemAdminDashboard() {
       a.click();
       window.URL.revokeObjectURL(downloadUrl);
       document.body.removeChild(a);
-      
+
       setDownloadingZip(false);
     } catch (error) {
       console.error('Error al crear ZIP de editables:', error);
@@ -608,9 +598,9 @@ export default function SystemAdminDashboard() {
 
   // Función para generar URLs de descarga
   const generateDownloadUrls = async (
-    empleadoId: string, 
+    empleadoId: string,
     contractFileURL?: string,
-    warningFileURL?: string, 
+    warningFileURL?: string,
     letterFileURL?: string,
     agreementFileURL?: string
   ): Promise<{
@@ -629,16 +619,16 @@ export default function SystemAdminDashboard() {
   }> => {
     const ftRh02PdfUrl = contractFileURL || `/api/download/pdf/FT-RH-02?empleadoId=${empleadoId}&preview=1`;
     const ftRh02PdfDownloadUrl = contractFileURL || `/api/download/pdf/FT-RH-02?empleadoId=${empleadoId}`;
-    
+
     const ftRh04PdfUrl = warningFileURL || `/api/download/pdf/FT-RH-04?empleadoId=${empleadoId}&preview=1`;
     const ftRh04PdfDownloadUrl = warningFileURL || `/api/download/pdf/FT-RH-04?empleadoId=${empleadoId}`;
-    
+
     const ftRh07PdfUrl = letterFileURL || `/api/download/pdf/FT-RH-07?empleadoId=${empleadoId}&preview=1`;
     const ftRh07PdfDownloadUrl = letterFileURL || `/api/download/pdf/FT-RH-07?empleadoId=${empleadoId}`;
-    
+
     const ftRh29PdfUrl = agreementFileURL || `/api/download/pdf/FT-RH-29?empleadoId=${empleadoId}&preview=1`;
     const ftRh29PdfDownloadUrl = agreementFileURL || `/api/download/pdf/FT-RH-29?empleadoId=${empleadoId}`;
-    
+
     return {
       ftRh02PdfUrl,
       ftRh02PdfDownloadUrl,
@@ -667,13 +657,8 @@ export default function SystemAdminDashboard() {
   // Manejar cambios en los inputs del formulario activo con verificación de duplicados
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    
-    // Para las fechas del proyecto, no permitir cambios manuales
+
     if (activeTab === 'proyecto') {
-      if ((name === 'fechaInicioContrato' || name === 'fechaFinContrato') && formDataProyecto.proyectoId) {
-        return;
-      }
-      
       setFormDataProyecto(prev => ({
         ...prev,
         [name]: name === 'email' ? value : value.toUpperCase()
@@ -710,15 +695,15 @@ export default function SystemAdminDashboard() {
   // Manejar cambios en documentos
   const handleDocumentChange = (tipo: keyof Documentos, files: FileList) => {
     const filesArray = Array.from(files);
-    
+
     let validExtensions: string[] = [];
-    
+
     if (tipo === 'foto') {
       validExtensions = ['.jpg', '.jpeg', '.png'];
     } else {
       validExtensions = ['.pdf'];
     }
-    
+
     const invalidFiles = filesArray.filter(file => {
       const extension = '.' + file.name.split('.').pop()?.toLowerCase();
       return !validExtensions.includes(extension);
@@ -764,7 +749,7 @@ export default function SystemAdminDashboard() {
   // Validar documentos
   const validateDocuments = (): boolean => {
     const documentosRequeridos: (keyof Documentos)[] = [
-      'cv', 'actaNacimiento', 'curp', 'rfc', 'imss', 
+      'cv', 'actaNacimiento', 'curp', 'rfc', 'imss',
       'ine', 'comprobanteDomicilio', 'foto'
     ];
 
@@ -820,9 +805,9 @@ export default function SystemAdminDashboard() {
       if (files.length > 0) {
         try {
           setUploadProgress(Math.round((uploadedFiles / totalFiles) * 50));
-          
+
           const response = await startUpload(files as File[]);
-          
+
           if (response && response.length > 0) {
             uploadedUrls[docType as keyof Documentos] = response.map(file => file.url);
             uploadedFiles += files.length;
@@ -850,13 +835,29 @@ export default function SystemAdminDashboard() {
       'colonia', 'municipio', 'estado', 'codigoPostal'
     ];
 
-    // ELIMINAR la validación de jefeDirectoId - AHORA ES OPCIONAL
-    // Ya no validamos jefeDirectoId aquí
-
     if (activeTab === 'proyecto') {
       const proyectoData = formData as FormDataProyecto;
       if (!proyectoData.proyectoId?.trim()) {
         setErrorMessage('El proyecto es requerido para personal de proyecto');
+        return false;
+      }
+      // Validar que el usuario haya ingresado las fechas del contrato
+      if (!proyectoData.fechaInicioContrato?.trim()) {
+        setErrorMessage('La fecha de inicio de contrato es requerida');
+        return false;
+      }
+      if (!proyectoData.fechaFinContrato?.trim()) {
+        setErrorMessage('La fecha de fin de contrato es requerida');
+        return false;
+      }
+      // Validar que fin >= inicio
+      if (proyectoData.fechaFinContrato < proyectoData.fechaInicioContrato) {
+        setErrorMessage('La fecha de fin de contrato no puede ser menor que la fecha de inicio');
+        return false;
+      }
+      // ⚠️ NUEVO: validar residencia
+      if (!proyectoData.residencia?.trim()) {
+        setErrorMessage('La residencia es requerida para personal de proyecto');
         return false;
       }
     }
@@ -899,7 +900,7 @@ export default function SystemAdminDashboard() {
         setErrorMessage('El porcentaje del beneficiario es requerido');
         return false;
       }
-      
+
       const porcentaje = parseFloat(beneficiario.porcentaje) || 0;
       if (Math.abs(porcentaje - 100) > 0.01) {
         setErrorMessage('El porcentaje del beneficiario debe ser 100% (solo se permite un beneficiario)');
@@ -943,7 +944,8 @@ export default function SystemAdminDashboard() {
       umf: '',
       salaryIMSS: '',
       proyectoId: '',
-      jefeDirectoId: ''
+      jefeDirectoId: '',
+      residencia: ''
     });
     setBeneficiarioProyecto({
       nombre: '',
@@ -1064,13 +1066,13 @@ export default function SystemAdminDashboard() {
         estadoCivil: toUpperCaseWithAccents(formData.estadoCivil),
         telefono: formData.telefono,
         email: formData.email.toLowerCase().trim(),
-        
+
         nss: formData.nss,
         curp: toUpperCaseWithAccents(formData.curp.trim()),
         rfc: toUpperCaseWithAccents(formData.rfc.trim()),
         nci: toUpperCaseWithAccents(formData.nci.trim()),
         umf: formData.umf,
-        
+
         calle: toUpperCaseWithAccents(formData.calle.trim()),
         numeroExterior: formData.numeroExterior,
         numeroInterior: formData.numeroInterior,
@@ -1078,25 +1080,26 @@ export default function SystemAdminDashboard() {
         municipio: toUpperCaseWithAccents(formData.municipio.trim()),
         estado: toUpperCaseWithAccents(formData.estado),
         codigoPostal: formData.codigoPostal,
-        
+
         puesto: toUpperCaseWithAccents(formData.puesto.trim()),
         departamento: toUpperCaseWithAccents(formData.departamento.trim()),
         salario: formData.salario,
         horarioLaboral: toUpperCaseWithAccents(formData.horarioLaboral),
         tipoContrato: toUpperCaseWithAccents(formData.tipoContrato),
-        
+
         fechaInicioContrato: formData.fechaInicioContrato,
         salaryIMSS: formData.salaryIMSS,
-        
+
         tipoPersonal: activeTab === 'proyecto' ? 'proyecto' : 'base',
-        
+
         beneficiarios: beneficiariosFiltrados,
 
         documentos: documentosUrls,
-        
-        // jefeDirectoId: Si está vacío o es "SIN JEFE ASIGNADO", enviar null
-        jefeDirectoId: activeTab === 'base' && formData.jefeDirectoId 
-          ? parseInt(formData.jefeDirectoId) 
+
+        jefeDirectoId: activeTab === 'base'
+          ? (formData.jefeDirectoId === '0' || formData.jefeDirectoId === ''
+              ? 0
+              : parseInt(formData.jefeDirectoId))
           : null
       };
 
@@ -1104,6 +1107,8 @@ export default function SystemAdminDashboard() {
         const proyectoData = formData as FormDataProyecto;
         formDataToSend.fechaFinContrato = proyectoData.fechaFinContrato;
         formDataToSend.proyectoId = proyectoData.proyectoId;
+        // ⚠️ NUEVO: enviar residencia
+        formDataToSend.residencia = toUpperCaseWithAccents(proyectoData.residencia.trim());
       }
 
       setUploadProgress(75);
@@ -1120,17 +1125,17 @@ export default function SystemAdminDashboard() {
       if (response.ok && result.success) {
         setUploadProgress(100);
         setSuccessMessage(result.message);
-        
+
         const documentUrls = await getDocumentUrls(result.empleadoId);
-        
+
         const downloadUrls = await generateDownloadUrls(
           result.empleadoId,
           documentUrls.contractFileURL,
-          documentUrls.warningFileURL, 
+          documentUrls.warningFileURL,
           documentUrls.letterFileURL,
           documentUrls.agreementFileURL
         );
-        
+
         const details: SuccessDetails = {
           empleadoId: result.employeeId,
           nombre: `${toUpperCaseWithAccents(formData.nombre)} ${toUpperCaseWithAccents(formData.apellidoPaterno)} ${toUpperCaseWithAccents(formData.apellidoMaterno)}`.trim(),
@@ -1150,10 +1155,10 @@ export default function SystemAdminDashboard() {
           ftRh07WordUrl: downloadUrls.ftRh07WordUrl,
           ftRh29WordUrl: downloadUrls.ftRh29WordUrl
         };
-        
+
         setSuccessDetails(details);
         setShowSuccessModal(true);
-        
+
         if (activeTab === 'proyecto') {
           setFormDataProyecto({
             nombre: '',
@@ -1186,7 +1191,8 @@ export default function SystemAdminDashboard() {
             umf: '',
             salaryIMSS: '',
             proyectoId: '',
-            jefeDirectoId: ''
+            jefeDirectoId: '',
+            residencia: ''
           });
           setBeneficiarioProyecto({
             nombre: '',
@@ -1296,7 +1302,7 @@ export default function SystemAdminDashboard() {
   // Componente para mostrar archivos seleccionados
   const FileListDisplay = ({ tipo }: { tipo: keyof Documentos }) => {
     const files = documentos[tipo];
-    
+
     if (files.length === 0) return null;
 
     return (
@@ -1326,7 +1332,7 @@ export default function SystemAdminDashboard() {
   // Componente para input de documento
   const DocumentInput = ({ tipo, required = false }: { tipo: keyof Documentos, required?: boolean }) => {
     const accept = tipo === 'foto' ? '.jpg,.jpeg,.png' : '.pdf';
-    
+
     return (
       <div className="space-y-2">
         <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">
@@ -1392,7 +1398,7 @@ export default function SystemAdminDashboard() {
               INFORMACIÓN PERSONAL
             </h2>
           </div>
-          
+
           <div className="p-6">
             <div className="space-y-6">
               {/* Nombre completo */}
@@ -1411,7 +1417,7 @@ export default function SystemAdminDashboard() {
                     required
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
                     APELLIDO PATERNO *
@@ -1482,7 +1488,7 @@ export default function SystemAdminDashboard() {
                     <option value="UNION LIBRE">UNIÓN LIBRE</option>
                   </select>
                 </div>
-                
+
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
                     GÉNERO *
@@ -1498,10 +1504,10 @@ export default function SystemAdminDashboard() {
                     <option value="FEMENINO">FEMENINO</option>
                   </select>
                 </div>
-                
+
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                    TELÉFONO 
+                    TELÉFONO
                   </label>
                   <input
                     type="text"
@@ -1515,7 +1521,7 @@ export default function SystemAdminDashboard() {
 
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                    EMAIL 
+                    EMAIL
                   </label>
                   <input
                     type="email"
@@ -1556,7 +1562,7 @@ export default function SystemAdminDashboard() {
                     <p className="text-xs text-red-500 mt-1">{getDuplicateErrorMessage('nss')}</p>
                   )}
                 </div>
-                
+
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
                     CURP *
@@ -1605,7 +1611,7 @@ export default function SystemAdminDashboard() {
 
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                    NÚMERO DE CONVENIO DE INFONAVIT 
+                    NÚMERO DE CONVENIO DE INFONAVIT
                   </label>
                   <input
                     type="text"
@@ -1695,7 +1701,7 @@ export default function SystemAdminDashboard() {
                     required
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
                     ESTADO *
@@ -1742,7 +1748,7 @@ export default function SystemAdminDashboard() {
                     <option value="ZACATECAS">ZACATECAS</option>
                   </select>
                 </div>
-                
+
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
                     CÓDIGO POSTAL *
@@ -1774,7 +1780,7 @@ export default function SystemAdminDashboard() {
                   </select>
                 </div>
               </div>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
@@ -1802,7 +1808,7 @@ export default function SystemAdminDashboard() {
               INFORMACIÓN LABORAL
             </h2>
           </div>
-          
+
           <div className="p-6">
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1820,7 +1826,7 @@ export default function SystemAdminDashboard() {
                     required
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
                     ÁREA *
@@ -1851,7 +1857,7 @@ export default function SystemAdminDashboard() {
                     required
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
                     SALARIO IMSS *
@@ -1870,7 +1876,7 @@ export default function SystemAdminDashboard() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
@@ -1888,7 +1894,7 @@ export default function SystemAdminDashboard() {
                     <option value="OTRO">OTRO</option>
                   </select>
                 </div>
-                
+
                 {/* JEFE DIRECTO - SOLO PARA PERSONAL BASE - OPCIONAL */}
                 {activeTab === 'base' && (
                   <div>
@@ -1903,7 +1909,7 @@ export default function SystemAdminDashboard() {
                         className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
                         disabled={loadingJefes}
                       >
-                        <option value="">SIN JEFE ASIGNADO</option>
+                        <option value="0">SIN JEFE ASIGNADO</option>
                         {jefesDirectos.map((jefe) => (
                           <option key={jefe.id} value={jefe.id}>
                             {jefe.nombreCompleto} - {jefe.puesto}
@@ -1944,7 +1950,8 @@ export default function SystemAdminDashboard() {
                     </div>
                   </div>
                 )}
-                
+
+                {/* FECHA DE INICIO CONTRATO - ahora editable para proyecto */}
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
                     FECHA DE INICIO CONTRATO *
@@ -1958,19 +1965,13 @@ export default function SystemAdminDashboard() {
                       name="fechaInicioContrato"
                       value={formData.fechaInicioContrato}
                       onChange={handleInputChange}
-                      className={`w-full pl-10 pr-3 py-2.5 text-sm bg-white border rounded focus:outline-none focus:border-[#3a6ea5] font-medium ${
-                        activeTab === 'proyecto' && formDataProyecto.proyectoId 
-                          ? 'bg-gray-100 text-gray-500 cursor-not-allowed border-gray-300' 
-                          : 'border-gray-400'
-                      }`}
+                      className="w-full pl-10 pr-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
                       required
-                      readOnly={activeTab === 'proyecto' && !!formDataProyecto.proyectoId}
-                      disabled={activeTab === 'proyecto' && !!formDataProyecto.proyectoId}
                     />
                   </div>
                 </div>
-                
-                {/* Solo mostrar fecha de fin de contrato para personal de proyecto */}
+
+                {/* Fecha de fin de contrato - ahora editable para proyecto */}
                 {activeTab === 'proyecto' && (
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
@@ -1985,19 +1986,13 @@ export default function SystemAdminDashboard() {
                         name="fechaFinContrato"
                         value={formDataProyecto.fechaFinContrato}
                         onChange={handleInputChange}
-                        className={`w-full pl-10 pr-3 py-2.5 text-sm bg-white border rounded focus:outline-none focus:border-[#3a6ea5] font-medium ${
-                          formDataProyecto.proyectoId 
-                            ? 'bg-gray-100 text-gray-500 cursor-not-allowed border-gray-300' 
-                            : 'border-gray-400'
-                        }`}
+                        className="w-full pl-10 pr-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
                         required
-                        readOnly={!!formDataProyecto.proyectoId}
-                        disabled={!!formDataProyecto.proyectoId}
                       />
                     </div>
                   </div>
                 )}
-                
+
                 {/* Campo de proyecto solo para personal de proyecto */}
                 {activeTab === 'proyecto' && (
                   <div>
@@ -2024,6 +2019,26 @@ export default function SystemAdminDashboard() {
                     )}
                   </div>
                 )}
+
+                {/* ⚠️ NUEVO CAMPO: RESIDENCIA - SOLO PARA PERSONAL DE PROYECTO */}
+                {activeTab === 'proyecto' && (
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
+                      RESIDENCIA *
+                    </label>
+                    <select
+                      name="residencia"
+                      value={formDataProyecto.residencia}
+                      onChange={handleInputChange}
+                      className="w-full px-3 py-2.5 text-sm bg-white border border-gray-400 rounded focus:outline-none focus:border-[#3a6ea5] font-medium"
+                      required
+                    >
+                      <option value="">Seleccione un tipo</option>
+                      <option value="LOCAL">LOCAL</option>
+                      <option value="FORANEO">FORÁNEO</option>
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -2033,15 +2048,15 @@ export default function SystemAdminDashboard() {
         <div className="bg-white rounded-lg shadow border border-gray-300 overflow-hidden mb-6">
           <div className="bg-gray-200 px-6 py-4 border-b-2 border-gray-300">
             <h2 className="text-lg font-bold text-gray-900 tracking-tight flex items-center">
-              BENEFICIARIO 
+              BENEFICIARIO
             </h2>
           </div>
-          
+
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                  NOMBRE (S) 
+                  NOMBRE (S)
                 </label>
                 <input
                   type="text"
@@ -2051,10 +2066,10 @@ export default function SystemAdminDashboard() {
                   placeholder="Ingrese el nombre (s) del beneficiario"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                  APELLIDO PATERNO 
+                  APELLIDO PATERNO
                 </label>
                 <input
                   type="text"
@@ -2067,7 +2082,7 @@ export default function SystemAdminDashboard() {
 
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                  APELLIDO MATERNO 
+                  APELLIDO MATERNO
                 </label>
                 <input
                   type="text"
@@ -2080,7 +2095,7 @@ export default function SystemAdminDashboard() {
 
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-2 uppercase">
-                  PARENTESCO 
+                  PARENTESCO
                 </label>
                 <select
                   value={beneficiario.parentesco}
@@ -2123,7 +2138,7 @@ export default function SystemAdminDashboard() {
               Todos los documentos son obligatorios. Documentos: PDF • Fotografía: JPG/PNG • Tamaño máximo: 4MB por archivo.
             </p>
           </div>
-          
+
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {/* Documentos obligatorios */}
@@ -2152,7 +2167,7 @@ export default function SystemAdminDashboard() {
                   <span>{uploadProgress}%</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
+                  <div
                     className="bg-[#3a6ea5] h-2 rounded-full transition-all duration-300"
                     style={{ width: `${uploadProgress}%` }}
                   ></div>
@@ -2183,7 +2198,7 @@ export default function SystemAdminDashboard() {
               `REGISTRAR ${activeTab === 'proyecto' ? 'PERSONAL DE PROYECTO' : 'PERSONAL BASE'}`
             )}
           </button>
-          
+
           <button
             type="button"
             onClick={limpiarTodosFormularios}
@@ -2200,7 +2215,7 @@ export default function SystemAdminDashboard() {
   return (
     <div className="min-h-screen bg-gray-100">
       {/* HEADER - Fixed */}
-      <AppHeader 
+      <AppHeader
         title="PANEL DE RECURSOS HUMANOS"
       />
 
@@ -2227,7 +2242,7 @@ export default function SystemAdminDashboard() {
                 <X className="h-5 w-5 text-gray-500" />
               </button>
             </div>
-            
+
             {/* Contenido del modal - dos columnas */}
             <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
               {/* Columna izquierda - Detalles del registro */}
@@ -2258,7 +2273,7 @@ export default function SystemAdminDashboard() {
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="bg-gray-50 rounded-lg p-4">
                     <h3 className="font-bold text-gray-800 mb-3 text-sm uppercase">DOCUMENTOS GENERADOS</h3>
                     <div className="flex items-center justify-between mb-4">
@@ -2271,9 +2286,9 @@ export default function SystemAdminDashboard() {
                         <ChevronLeft className="h-4 w-4 text-gray-700" />
                       </button>
                       <span className="font-bold text-gray-800 text-sm">
-                        {formatoActivo === 'FT-RH-02' ? 'FORMATO FT-RH-02' : 
-                         formatoActivo === 'FT-RH-04' ? 'FORMATO FT-RH-04' : 
-                         formatoActivo === 'FT-RH-07' ? 'FORMATO FT-RH-07' : 
+                        {formatoActivo === 'FT-RH-02' ? 'FORMATO FT-RH-02' :
+                         formatoActivo === 'FT-RH-04' ? 'FORMATO FT-RH-04' :
+                         formatoActivo === 'FT-RH-07' ? 'FORMATO FT-RH-07' :
                          'FORMATO FT-RH-29'}
                       </span>
                       <button
@@ -2285,7 +2300,7 @@ export default function SystemAdminDashboard() {
                         <ChevronRight className="h-4 w-4 text-gray-700" />
                       </button>
                     </div>
-                    
+
                     <div className="space-y-3">
                       {formatoActivo === 'FT-RH-02' ? (
                         <>
@@ -2318,7 +2333,7 @@ export default function SystemAdminDashboard() {
                               </button>
                             </div>
                           </div>
-                          
+
                           <div className="flex items-center justify-between">
                             <div className="flex items-center">
                               <FileText className="h-5 w-5 text-gray-600 mr-2" />
@@ -2364,7 +2379,7 @@ export default function SystemAdminDashboard() {
                               </button>
                             </div>
                           </div>
-                          
+
                           <div className="flex items-center justify-between">
                             <div className="flex items-center">
                               <FileText className="h-5 w-5 text-gray-600 mr-2" />
@@ -2410,7 +2425,7 @@ export default function SystemAdminDashboard() {
                               </button>
                             </div>
                           </div>
-                          
+
                           <div className="flex items-center justify-between">
                             <div className="flex items-center">
                               <FileText className="h-5 w-5 text-gray-600 mr-2" />
@@ -2456,7 +2471,7 @@ export default function SystemAdminDashboard() {
                               </button>
                             </div>
                           </div>
-                          
+
                           <div className="flex items-center justify-between">
                             <div className="flex items-center">
                               <FileText className="h-5 w-5 text-gray-600 mr-2" />
@@ -2474,7 +2489,7 @@ export default function SystemAdminDashboard() {
                       )}
                     </div>
                   </div>
-                  
+
                   <div className="bg-gray-50 rounded-lg p-4">
                     <h3 className="font-bold text-gray-800 mb-3 text-sm uppercase">DESCARGAS MASIVAS</h3>
                     <div className="space-y-3">
@@ -2514,28 +2529,28 @@ export default function SystemAdminDashboard() {
                   </div>
                 </div>
               </div>
-              
+
               {/* Columna derecha - Vista previa del PDF */}
               <div className="flex-1 flex flex-col p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-bold text-gray-800 text-sm uppercase">
                     VISTA PREVIA - {
-                      formatoActivo === 'FT-RH-02' ? 'FORMATO FT-RH-02' : 
-                      formatoActivo === 'FT-RH-04' ? 'FORMATO FT-RH-04' : 
-                      formatoActivo === 'FT-RH-07' ? 'FORMATO FT-RH-07' : 
+                      formatoActivo === 'FT-RH-02' ? 'FORMATO FT-RH-02' :
+                      formatoActivo === 'FT-RH-04' ? 'FORMATO FT-RH-04' :
+                      formatoActivo === 'FT-RH-07' ? 'FORMATO FT-RH-07' :
                       'FORMATO FT-RH-29'
                     }
                   </h3>
                   <div className="flex items-center space-x-2">
                     <span className="text-xs text-gray-500">
-                      {formatoActivo === 'FT-RH-02' ? '1 de 4' : 
-                       formatoActivo === 'FT-RH-04' ? '2 de 4' : 
-                       formatoActivo === 'FT-RH-07' ? '3 de 4' : 
+                      {formatoActivo === 'FT-RH-02' ? '1 de 4' :
+                       formatoActivo === 'FT-RH-04' ? '2 de 4' :
+                       formatoActivo === 'FT-RH-07' ? '3 de 4' :
                        '4 de 4'}
                     </span>
                   </div>
                 </div>
-                
+
                 <div className="flex-1 border border-gray-300 rounded-lg overflow-hidden relative bg-gray-50">
                   {pdfLoading && (
                     <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
@@ -2545,12 +2560,12 @@ export default function SystemAdminDashboard() {
                       </div>
                     </div>
                   )}
-                  
+
                   <iframe
                     src={
                       formatoActivo === 'FT-RH-02' ? successDetails.ftRh02PdfUrl :
-                      formatoActivo === 'FT-RH-04' ? successDetails.ftRh04PdfUrl : 
-                      formatoActivo === 'FT-RH-07' ? successDetails.ftRh07PdfUrl : 
+                      formatoActivo === 'FT-RH-04' ? successDetails.ftRh04PdfUrl :
+                      formatoActivo === 'FT-RH-07' ? successDetails.ftRh07PdfUrl :
                       successDetails.ftRh29PdfUrl
                     }
                     className="w-full h-full border-0"
@@ -2590,7 +2605,7 @@ export default function SystemAdminDashboard() {
                 >
                   PERSONAL DE PROYECTO
                 </button>
-                
+
                 <button
                   onClick={() => setActiveTab('base')}
                   className={`flex-1 py-3 px-4 text-center font-bold text-sm uppercase tracking-tight transition-all duration-200 ${
@@ -2611,7 +2626,7 @@ export default function SystemAdminDashboard() {
                   <div className="flex items-center">
                     <svg className="h-5 w-5 text-red-600 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg> 
+                    </svg>
                     <p className="text-sm font-medium text-gray-600 leading-5">{errorMessage}</p>
                   </div>
                 </div>
@@ -2640,24 +2655,20 @@ export default function SystemAdminDashboard() {
         .animate-fade-in {
           animation: fade-in 0.3s ease-out;
         }
-        
+
         body {
           padding-top: 0;
           padding-bottom: 0;
           margin: 0;
           overflow-x: hidden;
         }
-        
+
         .fixed.inset-0.z-\\[9999\\] {
           z-index: 9999 !important;
         }
-        
+
         header, footer {
           z-index: 50 !important;
-        }
-        
-        .fixed.inset-0.z-\\[9999\\] {
-          z-index: 9999 !important;
         }
       `}</style>
     </div>
