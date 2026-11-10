@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
           pp.FirstName,
           pp.LastName,
           pp.MiddleName,
-          DATE_FORMAT(pr.StartDate, '%Y/%m/%d') AS StartDate,
+          DATE_FORMAT(pc.StartDate, '%Y/%m/%d') AS StartDate,
           pc.Position,
           pc.LetterFileURL
         FROM projectpersonnel pp
