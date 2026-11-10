@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
           pp.LastName,
           pp.MiddleName,
           pd.*,
-          DATE_FORMAT(pr.StartDate, '%Y/%m/%d') AS StartDate,
+          DATE_FORMAT(pc.StartDate, '%Y/%m/%d') AS StartDate,
           pc.Position,
           pc.WorkSchedule,
           pc.Salary,
