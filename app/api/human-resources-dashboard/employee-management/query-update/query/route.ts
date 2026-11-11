@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
     `);
 
     // 2. Obtener personal de proyecto - UN SOLO REGISTRO POR EMPLEADO
-    // Usamos una subconsulta para obtener el contrato más reciente (muestra el ultimo contrato (registro de la tabla projectcontracts))
+    // Usamos una subconsulta para obtener el contrato más reciente
     const [projectEmployees] = await connection.execute(`
       SELECT 
     e.EmployeeID,
@@ -131,7 +131,6 @@ ORDER BY e.EmployeeID;
     let allEmployees = [...baseEmployeesFormatted, ...projectEmployeesFormatted];
 
     // DEDUPLICAR POR EMPLOYEEID (un empleado no puede aparecer dos veces)
-    // Esto es crítico - un mismo EmployeeID no puede estar en BASE y PROJECT simultáneamente
     const uniqueByEmployeeId = new Map<number, (typeof allEmployees)[0]>();
     
     for (const emp of allEmployees) {
@@ -139,7 +138,6 @@ ORDER BY e.EmployeeID;
       if (!existing) {
         uniqueByEmployeeId.set(emp.EmployeeID, emp);
       } else {
-        // Si ya existe, logueamos el conflicto (esto no debería pasar)
         console.warn(`Empleado duplicado encontrado: ID=${emp.EmployeeID}, tipos: ${existing.tipo} y ${emp.tipo}`);
       }
     }
