@@ -143,17 +143,26 @@ export async function PUT(
           }
         }
 
+        // ⚠️ BASE: jefeDirectoId vacío/0/null → null (SIN JEFE DIRECTO)
         if (contractInfo) {
           const { startDate, salaryIMSS, jefeDirectoId } = contractInfo;
           const fechaInicioFormateada = formatearFechaMySQL(startDate);
+          
+          // Convertir jefeDirectoId a null si viene vacío, 0 o no es válido
+          let jefeDirectoIdValue: number | null = null;
+          if (jefeDirectoId !== undefined && jefeDirectoId !== null && jefeDirectoId !== '' && jefeDirectoId !== 0) {
+            const parsed = parseInt(jefeDirectoId);
+            if (!isNaN(parsed) && parsed > 0) jefeDirectoIdValue = parsed;
+          }
+          
           const [contractRows] = await connection.execute('SELECT ContractID FROM basecontracts WHERE BasePersonnelID = ?', [basePersonnelId]) as any;
 
           if (contractRows && contractRows.length > 0) {
             contractId = contractRows[0].ContractID;
-            await connection.execute(`UPDATE basecontracts SET StartDate = ?, SalaryIMSS = ?, jefeDirectoId = ? WHERE BasePersonnelID = ?`, [fechaInicioFormateada, salaryIMSS || null, jefeDirectoId || null, basePersonnelId]);
+            await connection.execute(`UPDATE basecontracts SET StartDate = ?, SalaryIMSS = ?, jefeDirectoId = ? WHERE BasePersonnelID = ?`, [fechaInicioFormateada, salaryIMSS || null, jefeDirectoIdValue, basePersonnelId]);
             shouldGenerateDocuments = true;
           } else {
-            const [insertResult] = await connection.execute(`INSERT INTO basecontracts (BasePersonnelID, StartDate, SalaryIMSS, jefeDirectoId) VALUES (?, ?, ?, ?)`, [basePersonnelId, fechaInicioFormateada, salaryIMSS || null, jefeDirectoId || null]) as any;
+            const [insertResult] = await connection.execute(`INSERT INTO basecontracts (BasePersonnelID, StartDate, SalaryIMSS, jefeDirectoId) VALUES (?, ?, ?, ?)`, [basePersonnelId, fechaInicioFormateada, salaryIMSS || null, jefeDirectoIdValue]) as any;
             contractId = insertResult.insertId;
             shouldGenerateDocuments = true;
             await connection.execute('UPDATE employees SET Status = 1 WHERE EmployeeID = ?', [employeeId]);
@@ -209,9 +218,33 @@ export async function PUT(
           }
         }
 
+        // ============================================================
+        // PROJECT: si está inactivo, se puede editar todo (incluye StartDate,
+        // EndDate y Residence ingresadas manualmente). Si está activo, solo
+        // se regeneran documentos.
+        // ============================================================
         if (contractInfo && currentStatus === 0) {
-          const { salaryIMSS, position, salary, workSchedule, projectId } = contractInfo;
-          const [insertResult] = await connection.execute(`INSERT INTO projectcontracts (ProjectPersonnelID, SalaryIMSS, Position, Salary, WorkSchedule, ProjectID, Status) VALUES (?, ?, ?, ?, ?, ?, ?)`, [projectPersonnelId, salaryIMSS || null, normalizarMayusculas(position || ''), salary || 1, normalizarMayusculas(workSchedule || ''), projectId || null, 1]) as any;
+          const { salaryIMSS, position, salary, workSchedule, projectId, startDate, endDate, residence } = contractInfo;
+          
+          const fechaInicioFormateada = formatearFechaMySQL(startDate);
+          const fechaFinFormateada = formatearFechaMySQL(endDate);
+          const residenciaValue = residence ? normalizarMayusculas(residence) : null;
+          
+          const [insertResult] = await connection.execute(
+            `INSERT INTO projectcontracts (ProjectPersonnelID, SalaryIMSS, Position, Salary, WorkSchedule, ProjectID, Status, StartDate, EndDate, Residence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+            [
+              projectPersonnelId, 
+              salaryIMSS || null, 
+              normalizarMayusculas(position || ''), 
+              salary || 1, 
+              normalizarMayusculas(workSchedule || ''), 
+              projectId || null, 
+              1,
+              fechaInicioFormateada,
+              fechaFinFormateada,
+              residenciaValue
+            ]
+          ) as any;
           contractId = insertResult.insertId;
           shouldGenerateDocuments = true;
           await connection.execute('UPDATE employees SET Status = 1 WHERE EmployeeID = ?', [employeeId]);
