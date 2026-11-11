@@ -4,15 +4,13 @@ import AppHeader from '@/components/header/2/2.1';
 import Footer from '@/components/footer';
 import { useSessionManager } from '@/hooks/useSessionManager/2';
 import { useInactivityManager } from '@/hooks/useInactivityManager';
-import { useState, useEffect, ChangeEvent, useRef, useCallback } from 'react';
-import { Search, ChevronLeft, ChevronRight, Eye, X, RefreshCw, File, CheckCircle, AlertCircle, Upload, XCircle, Download, FileText } from 'lucide-react';
+import { useState, useEffect, ChangeEvent, useRef } from 'react';
+import { Search, ChevronLeft, ChevronRight, Eye, X, RefreshCw, File, CheckCircle, AlertCircle, Upload, XCircle, Download, FileText, Edit, Trash } from 'lucide-react';
 import { useUploadThing } from '@/lib/uploadthing';
 import JSZip from 'jszip';
 
-// Tipos de empleado
 type EmployeeType = 'BASE' | 'PROJECT';
 
-// Interface para empleado base
 interface BaseEmployee {
   EmployeeID: number;
   BasePersonnelID: number;
@@ -37,7 +35,6 @@ interface BaseEmployee {
   uniqueKey: string;
 }
 
-// Interface para empleado de proyecto
 interface ProjectEmployee {
   EmployeeID: number;
   ProjectPersonnelID: number;
@@ -63,17 +60,14 @@ interface ProjectEmployee {
   uniqueKey: string;
 }
 
-// Tipo unificado
 type Employee = BaseEmployee | ProjectEmployee;
 
-// Interface para filtros
 interface Filters {
   search: string;
   tipo: 'TODOS' | EmployeeType;
   projectId?: string;
 }
 
-// Interface para proyectos
 interface Proyecto {
   ProjectID: number;
   NameProject: string;
@@ -85,7 +79,23 @@ interface Proyecto {
   AdminPosition?: string;
 }
 
-// Interface para todos los documentos del empleado
+// ⚠️ Status ya NO se captura en el form, se hereda de employees
+interface ProjectAssignment {
+  AssignmentID: number;
+  EmployeeID: number;
+  ProjectID: number;
+  ProjectName?: string;
+  RoleInProject: string | null;
+  Position: string | null;
+  StartDate: string | null;
+  EndDate: string | null;
+  WorkSchedule: string | null;
+  SalaryInProject: number | null;
+  Residence: string | null;
+  Status: number;
+  Observations: string | null;
+}
+
 interface EmployeeDocuments {
   CVFileURL?: string | null;
   ANFileURL?: string | null;
@@ -104,7 +114,6 @@ interface EmployeeDocuments {
   FotoFileURL?: string | null;
 }
 
-// Interface para los archivos a subir
 interface UploadFiles {
   cvFile: File | null;
   actaNacimientoFile: File | null;
@@ -123,7 +132,6 @@ interface UploadFiles {
   fotoFile: File | null;
 }
 
-// Interface para detalles de empleado
 interface EmployeeDetails {
   success: boolean;
   uniqueKey?: string;
@@ -172,7 +180,8 @@ interface EmployeeDetails {
     cRFileURL?: string | null;
     oFFileURL?: string | null;
     status?: number;
-    jefeDirectoId?: number;  
+    jefeDirectoId?: number;
+    residence?: string;
   };
   beneficiario?: {
     nombreCompleto: string;
@@ -188,9 +197,10 @@ interface EmployeeDetails {
     status: number;
   };
   fechaAltaIMSS?: string | null;
+  assignments?: ProjectAssignment[];
+  employeeStatus?: number; // ⚠️ NUEVO: Status de employees
 }
 
-// Interface para el formulario de edición
 interface EditFormData {
   firstName: string;
   lastName: string;
@@ -218,6 +228,8 @@ interface EditFormData {
   salario: string;
   horario: string;
   fechaInicio: string;
+  fechaFin: string;
+  residencia: string;
   proyectoId: string;
   salaryIMSS: string;
   fechaAltaIMSS: string;
@@ -227,6 +239,19 @@ interface EditFormData {
   beneficiaryRelationship: string;
   beneficiaryPercentage: string;
   jefeDirectoId: string;
+}
+
+// ⚠️ Status ELIMINADO del formulario
+interface AssignmentFormData {
+  ProjectID: string;
+  RoleInProject: string;
+  Position: string;
+  StartDate: string;
+  EndDate: string;
+  WorkSchedule: string;
+  SalaryInProject: string;
+  Residence: string;
+  Observations: string;
 }
 
 const documentNames: Record<string, string> = {
@@ -274,21 +299,14 @@ const toUpperCaseWithAccents = (text: string): string => {
 
 const formatDateForInput = (dateString?: string): string => {
   if (!dateString) return '';
-  
   const str = String(dateString);
-
-  // Si ya viene como "YYYY-MM-DD..." (con o sin hora), lo cortamos directo
   const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (match) {
-    return `${match[1]}-${match[2]}-${match[3]}`; // YYYY-MM-DD, listo para el input date
+    return `${match[1]}-${match[2]}-${match[3]}`;
   }
-
-  // Si viene en otro formato (ej. "2026/05/30" o con hora), parsearlo cuidadosamente
   try {
     const date = new Date(str);
     if (isNaN(date.getTime())) return '';
-    
-    // Usar los métodos UTC para no desplazar el día por zona horaria
     const year = date.getUTCFullYear();
     const month = String(date.getUTCMonth() + 1).padStart(2, '0');
     const day = String(date.getUTCDate()).padStart(2, '0');
@@ -301,14 +319,11 @@ const formatDateForInput = (dateString?: string): string => {
 const formatDate = (dateString?: string): string => {
   if (!dateString) return '—';
   const str = String(dateString);
-
-  // Si ya viene como "YYYY-MM-DD" (o "YYYY-MM-DDTHH:mm:ss..."), parsear manualmente
   const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (match) {
     const [, y, m, d] = match;
-    return `${d}/${m}/${y}`;   // "30/05/2026"
+    return `${d}/${m}/${y}`;
   }
-
   try {
     return new Date(str).toLocaleDateString('es-MX', {
       year: 'numeric', 
@@ -318,6 +333,18 @@ const formatDate = (dateString?: string): string => {
   } catch {
     return str;
   }
+};
+
+const emptyAssignmentForm: AssignmentFormData = {
+  ProjectID: '',
+  RoleInProject: '',
+  Position: '',
+  StartDate: '',
+  EndDate: '',
+  WorkSchedule: '',
+  SalaryInProject: '',
+  Residence: '',
+  Observations: ''
 };
 
 export default function EmployeesListPage() {
@@ -341,7 +368,6 @@ export default function EmployeesListPage() {
   const [proyectos, setProyectos] = useState<Proyecto[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   
-  // Solo para personal BASE - jefes directos
   const [personalBaseList, setPersonalBaseList] = useState<Array<{ id: number; nombreCompleto: string; puesto: string }>>([]);
   const [loadingPersonalBase, setLoadingPersonalBase] = useState(false);
 
@@ -426,6 +452,8 @@ export default function EmployeesListPage() {
     salario: '',
     horario: '',
     fechaInicio: '',
+    fechaFin: '',
+    residencia: '',
     proyectoId: '',
     salaryIMSS: '',
     fechaAltaIMSS: '',
@@ -437,7 +465,12 @@ export default function EmployeesListPage() {
     jefeDirectoId: ''
   });
 
-  const [selectedProjectDates, setSelectedProjectDates] = useState<{ startDate: string; endDate: string }>({ startDate: '', endDate: '' });
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false);
+  const [editingAssignmentId, setEditingAssignmentId] = useState<number | null>(null);
+  const [assignmentForm, setAssignmentForm] = useState<AssignmentFormData>(emptyAssignmentForm);
+  const [savingAssignment, setSavingAssignment] = useState(false);
+  const [assignmentError, setAssignmentError] = useState('');
+  const [assignmentEmployeeStatus, setAssignmentEmployeeStatus] = useState<number>(1);
 
   const fileInputRefs = useRef<{
     [key in UploadFileKey]?: HTMLInputElement
@@ -469,29 +502,6 @@ export default function EmployeesListPage() {
     setTotalPages(Math.ceil(filteredEmployees.length / itemsPerPage));
     setCurrentPage(1);
   }, [filteredEmployees, itemsPerPage]);
-
-  const updateProjectDates = useCallback((projectId: string) => {
-    if (!projectId) {
-      setSelectedProjectDates({ startDate: '', endDate: '' });
-      return;
-    }
-    
-    const selectedProject = proyectos.find(p => p.ProjectID.toString() === projectId);
-    if (selectedProject) {
-      setSelectedProjectDates({
-        startDate: selectedProject.StartDate || '',
-        endDate: selectedProject.EndDate || ''
-      });
-    } else {
-      setSelectedProjectDates({ startDate: '', endDate: '' });
-    }
-  }, [proyectos]);
-
-  useEffect(() => {
-    if (isEditing && selectedEmployee?.tipo === 'PROJECT') {
-      updateProjectDates(editFormData.proyectoId);
-    }
-  }, [editFormData.proyectoId, isEditing, selectedEmployee?.tipo, updateProjectDates]);
 
   const currentEmployees = filteredEmployees.slice(
     (currentPage - 1) * itemsPerPage,
@@ -612,12 +622,9 @@ export default function EmployeesListPage() {
 
   const handleDownloadAllPDFs = async () => {
     if (!updateSuccessDetails) return;
-    
     try {
       setDownloadingZip(true);
-      
       const zip = new JSZip();
-      
       if (updateSuccessDetails.ftRh02PdfDownloadUrl) {
         try {
           const response = await fetch(updateSuccessDetails.ftRh02PdfDownloadUrl);
@@ -625,11 +632,8 @@ export default function EmployeesListPage() {
             const blob = await response.blob();
             zip.file(`FT-RH-02_${updateSuccessDetails.empleadoId}.pdf`, blob);
           }
-        } catch (error) {
-          console.error('Error al descargar FT-RH-02:', error);
-        }
+        } catch (error) { console.error('Error al descargar FT-RH-02:', error); }
       }
-      
       if (updateSuccessDetails.ftRh04PdfDownloadUrl) {
         try {
           const response = await fetch(updateSuccessDetails.ftRh04PdfDownloadUrl);
@@ -637,11 +641,8 @@ export default function EmployeesListPage() {
             const blob = await response.blob();
             zip.file(`FT-RH-04_${updateSuccessDetails.empleadoId}.pdf`, blob);
           }
-        } catch (error) {
-          console.error('Error al descargar FT-RH-04:', error);
-        }
+        } catch (error) { console.error('Error al descargar FT-RH-04:', error); }
       }
-      
       if (updateSuccessDetails.ftRh07PdfDownloadUrl) {
         try {
           const response = await fetch(updateSuccessDetails.ftRh07PdfDownloadUrl);
@@ -649,11 +650,8 @@ export default function EmployeesListPage() {
             const blob = await response.blob();
             zip.file(`FT-RH-07_${updateSuccessDetails.empleadoId}.pdf`, blob);
           }
-        } catch (error) {
-          console.error('Error al descargar FT-RH-07:', error);
-        }
+        } catch (error) { console.error('Error al descargar FT-RH-07:', error); }
       }
-      
       if (updateSuccessDetails.ftRh29PdfDownloadUrl) {
         try {
           const response = await fetch(updateSuccessDetails.ftRh29PdfDownloadUrl);
@@ -661,11 +659,8 @@ export default function EmployeesListPage() {
             const blob = await response.blob();
             zip.file(`FT-RH-29_${updateSuccessDetails.empleadoId}.pdf`, blob);
           }
-        } catch (error) {
-          console.error('Error al descargar FT-RH-29:', error);
-        }
+        } catch (error) { console.error('Error al descargar FT-RH-29:', error); }
       }
-      
       const content = await zip.generateAsync({ type: "blob" });
       const downloadUrl = window.URL.createObjectURL(content);
       const a = document.createElement('a');
@@ -675,7 +670,6 @@ export default function EmployeesListPage() {
       a.click();
       window.URL.revokeObjectURL(downloadUrl);
       document.body.removeChild(a);
-      
       setDownloadingZip(false);
     } catch (error) {
       console.error('Error al crear ZIP:', error);
@@ -686,12 +680,9 @@ export default function EmployeesListPage() {
 
   const handleDownloadAllEditables = async () => {
     if (!updateSuccessDetails) return;
-    
     try {
       setDownloadingZip(true);
-      
       const zip = new JSZip();
-      
       if (updateSuccessDetails.ftRh02WordUrl) {
         try {
           const response = await fetch(updateSuccessDetails.ftRh02WordUrl);
@@ -699,11 +690,8 @@ export default function EmployeesListPage() {
             const blob = await response.blob();
             zip.file(`FT-RH-02_${updateSuccessDetails.empleadoId}.docx`, blob);
           }
-        } catch (error) {
-          console.error('Error al descargar FT-RH-02 editable:', error);
-        }
+        } catch (error) { console.error('Error al descargar FT-RH-02 editable:', error); }
       }
-      
       if (updateSuccessDetails.ftRh04ExcelUrl) {
         try {
           const response = await fetch(updateSuccessDetails.ftRh04ExcelUrl);
@@ -711,11 +699,8 @@ export default function EmployeesListPage() {
             const blob = await response.blob();
             zip.file(`FT-RH-04_${updateSuccessDetails.empleadoId}.xlsx`, blob);
           }
-        } catch (error) {
-          console.error('Error al descargar FT-RH-04 editable:', error);
-        }
+        } catch (error) { console.error('Error al descargar FT-RH-04 editable:', error); }
       }
-      
       if (updateSuccessDetails.ftRh07WordUrl) {
         try {
           const response = await fetch(updateSuccessDetails.ftRh07WordUrl);
@@ -723,11 +708,8 @@ export default function EmployeesListPage() {
             const blob = await response.blob();
             zip.file(`FT-RH-07_${updateSuccessDetails.empleadoId}.docx`, blob);
           }
-        } catch (error) {
-          console.error('Error al descargar FT-RH-07 editable:', error);
-        }
+        } catch (error) { console.error('Error al descargar FT-RH-07 editable:', error); }
       }
-      
       if (updateSuccessDetails.ftRh29WordUrl) {
         try {
           const response = await fetch(updateSuccessDetails.ftRh29WordUrl);
@@ -735,11 +717,8 @@ export default function EmployeesListPage() {
             const blob = await response.blob();
             zip.file(`FT-RH-29_${updateSuccessDetails.empleadoId}.docx`, blob);
           }
-        } catch (error) {
-          console.error('Error al descargar FT-RH-29 editable:', error);
-        }
+        } catch (error) { console.error('Error al descargar FT-RH-29 editable:', error); }
       }
-      
       const content = await zip.generateAsync({ type: "blob" });
       const downloadUrl = window.URL.createObjectURL(content);
       const a = document.createElement('a');
@@ -749,7 +728,6 @@ export default function EmployeesListPage() {
       a.click();
       window.URL.revokeObjectURL(downloadUrl);
       document.body.removeChild(a);
-      
       setDownloadingZip(false);
     } catch (error) {
       console.error('Error al crear ZIP de editables:', error);
@@ -762,9 +740,7 @@ export default function EmployeesListPage() {
     try {
       setDetailsLoading(true);
       setSelectedEmployee(employee);
-      
       setIsEditing(false);
-      
       const resetFiles: UploadFiles = {
         cvFile: null, actaNacimientoFile: null, curpFile: null, rfcFile: null,
         imssFile: null, ineFile: null, comprobanteDomicilioFile: null,
@@ -774,26 +750,20 @@ export default function EmployeesListPage() {
         examenMedicoFile: null, fotoFile: null
       };
       setUploadFiles(resetFiles);
-      
       const response = await fetch(`/api/human-resources-dashboard/employee-management/query-update/query/details/${employee.EmployeeID}?tipo=${employee.tipo}`);
       if (!response.ok) throw new Error('Error al cargar detalles');
       const data = await response.json();
-      
       if (data.success) {
         setEmployeeDetails(data);
-        
         const allUrls: EmployeeDocuments = {};
         if (data.documentacion) {
           Object.assign(allUrls, data.documentacion);
         }
         setExistingUrls(allUrls);
-        
         const personalInfo = data.personalInfo || {};
         const contractInfo = data.contractInfo || {};
         const beneficiario = data.beneficiario;
-        
         const fechaNacimientoFormatted = formatDateForInput(personalInfo.fechaNacimiento);
-        
         let benFirstName = '', benLastName = '', benMiddleName = '';
         if (beneficiario?.nombreCompleto) {
           const parts = beneficiario.nombreCompleto.split(' ');
@@ -801,9 +771,7 @@ export default function EmployeesListPage() {
           benLastName = parts[1] || '';
           benMiddleName = parts.slice(2).join(' ') || '';
         }
-        
         const currentProjectId = employee.tipo === 'PROJECT' ? ((employee as ProjectEmployee).ProjectID?.toString() || '') : '';
-        
         setEditFormData({
           firstName: employee.FirstName || '',
           lastName: employee.LastName || '',
@@ -831,6 +799,8 @@ export default function EmployeesListPage() {
           salario: employee.Salary?.toString() || '',
           horario: employee.WorkSchedule || '',
           fechaInicio: formatDateForInput(contractInfo.fechaInicio),
+          fechaFin: formatDateForInput(contractInfo.fechaFin),
+          residencia: contractInfo.residence || '',
           proyectoId: currentProjectId,
           salaryIMSS: contractInfo.salaryIMSS?.toString() || '',
           fechaAltaIMSS: data.fechaAltaIMSS ? formatDateForInput(data.fechaAltaIMSS) : '',
@@ -841,11 +811,6 @@ export default function EmployeesListPage() {
           beneficiaryPercentage: beneficiario?.porcentaje?.toString() || '',
           jefeDirectoId: contractInfo.jefeDirectoId?.toString() || ''
         });
-        
-        if (employee.tipo === 'PROJECT') {
-          updateProjectDates(currentProjectId);
-        }
-        
         setShowDetailsModal(true);
       } else {
         setError(data.message || 'Error al cargar detalles');
@@ -858,16 +823,25 @@ export default function EmployeesListPage() {
     }
   };
 
+  const refreshEmployeeDetails = async () => {
+    if (!selectedEmployee) return;
+    try {
+      const response = await fetch(`/api/human-resources-dashboard/employee-management/query-update/query/details/${selectedEmployee.EmployeeID}?tipo=${selectedEmployee.tipo}`);
+      if (!response.ok) throw new Error('Error al recargar detalles');
+      const data = await response.json();
+      if (data.success) {
+        setEmployeeDetails(data);
+      }
+    } catch (error) {
+      console.error('Error al recargar detalles:', error);
+    }
+  };
+
   const handleEditFormChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    const shouldUpperCase = !['email', 'fechaNacimiento', 'fechaInicio', 'salario', 'salaryIMSS', 'beneficiaryPercentage', 'proyectoId', 'fechaAltaIMSS'].includes(name);
+    const shouldUpperCase = !['email', 'fechaNacimiento', 'fechaInicio', 'fechaFin', 'salario', 'salaryIMSS', 'beneficiaryPercentage', 'proyectoId', 'fechaAltaIMSS', 'residencia'].includes(name);
     const newValue = shouldUpperCase ? toUpperCaseWithAccents(value) : value;
-    
     setEditFormData(prev => ({ ...prev, [name]: newValue }));
-    
-    if (name === 'proyectoId' && selectedEmployee?.tipo === 'PROJECT') {
-      updateProjectDates(newValue);
-    }
   };
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>, tipo: UploadFileKey) => {
@@ -912,10 +886,8 @@ export default function EmployeesListPage() {
       if (file !== null) filesToUpload.push({ file, tipo: key as UploadFileKey });
     });
     if (filesToUpload.length === 0) return {};
-    
     let uploadedCount = 0;
     const totalFiles = filesToUpload.length;
-    
     for (const { file, tipo } of filesToUpload) {
       try {
         setUploadProgress(Math.round((uploadedCount / totalFiles) * 50));
@@ -942,22 +914,31 @@ export default function EmployeesListPage() {
 
   const handleSaveChanges = async () => {
     if (!selectedEmployee) return;
-    
     if (selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1) {
       const laboralFieldsChanged = 
         editFormData.puesto !== selectedEmployee.Position ||
         editFormData.salario !== selectedEmployee.Salary?.toString() ||
         editFormData.horario !== selectedEmployee.WorkSchedule ||
         editFormData.proyectoId !== (selectedEmployee as ProjectEmployee).ProjectID?.toString() ||
-        editFormData.jefeDirectoId !== '' ||
-        editFormData.salaryIMSS !== (employeeDetails?.contractInfo?.salaryIMSS?.toString() || '');
-      
+        editFormData.salaryIMSS !== (employeeDetails?.contractInfo?.salaryIMSS?.toString() || '') ||
+        editFormData.residencia !== (employeeDetails?.contractInfo?.residence || '') ||
+        editFormData.fechaInicio !== formatDateForInput(employeeDetails?.contractInfo?.fechaInicio) ||
+        editFormData.fechaFin !== formatDateForInput(employeeDetails?.contractInfo?.fechaFin);
       if (laboralFieldsChanged) {
         setError('NO SE PUEDEN GUARDAR CAMBIOS LABORALES. EL EMPLEADO DE PROYECTO ESTÁ ACTIVO. PRIMERO DEBE REALIZAR LA BAJA.');
         return;
       }
     }
-    
+    if (selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 0) {
+      if (editFormData.fechaInicio && editFormData.fechaFin && editFormData.fechaFin < editFormData.fechaInicio) {
+        setError('LA FECHA DE FIN DE CONTRATO NO PUEDE SER MENOR QUE LA FECHA DE INICIO');
+        return;
+      }
+      if (!editFormData.residencia) {
+        setError('LA RESIDENCIA ES REQUERIDA PARA PERSONAL DE PROYECTO');
+        return;
+      }
+    }
     try {
       setSavingEdit(true);
       setError('');
@@ -991,36 +972,31 @@ export default function EmployeesListPage() {
         EMFileURL: finalUrls.EMFileURL,
         FotoFileURL: finalUrls.FotoFileURL
       };
-      
-      // ============================================
-      // CORRECCIÓN PRINCIPAL:
-      // - BASE: SIEMPRE envía contractInfo (activo o inactivo)
-      //   NOTA: fechaAltaIMSS NO se envía porque está deshabilitado en el formulario
-      // - PROJECT: solo envía contractInfo si está INACTIVO
-      //   (porque PROJECT activo no puede modificar campos laborales)
-      // ============================================
       let contractInfoData = undefined;
-      
       if (selectedEmployee.tipo === 'BASE') {
-        // BASE siempre puede actualizar su contrato (activo o inactivo)
-        // NOTA: fechaAltaIMSS NO se envía porque está deshabilitado en el formulario
+        let jefeDirectoIdValue: number | null = null;
+        if (editFormData.jefeDirectoId && editFormData.jefeDirectoId !== '0' && editFormData.jefeDirectoId !== '') {
+          const parsed = parseInt(editFormData.jefeDirectoId);
+          if (!isNaN(parsed) && parsed > 0) jefeDirectoIdValue = parsed;
+        }
         contractInfoData = {
           startDate: editFormData.fechaInicio || null,
           salaryIMSS: editFormData.salaryIMSS ? parseFloat(editFormData.salaryIMSS) : null,
-          jefeDirectoId: editFormData.jefeDirectoId ? parseInt(editFormData.jefeDirectoId) : null
+          jefeDirectoId: jefeDirectoIdValue
         };
       } else if (selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 0) {
-        // PROJECT solo si está inactivo
         contractInfoData = {
           salaryIMSS: editFormData.salaryIMSS ? parseFloat(editFormData.salaryIMSS) : null,
           position: toUpperCaseWithAccents(editFormData.puesto),
           salary: parseFloat(editFormData.salario) || 0,
           workSchedule: toUpperCaseWithAccents(editFormData.horario),
           projectId: editFormData.proyectoId ? parseInt(editFormData.proyectoId) : null,
-          jefeDirectoId: editFormData.jefeDirectoId ? parseInt(editFormData.jefeDirectoId) : null
+          startDate: editFormData.fechaInicio || null,
+          endDate: editFormData.fechaFin || null,
+          residence: toUpperCaseWithAccents(editFormData.residencia || ''),
+          jefeDirectoId: null
         };
       }
-      
       const updateData = {
         tipo: selectedEmployee.tipo,
         personalInfo: {
@@ -1065,35 +1041,27 @@ export default function EmployeesListPage() {
           percentage: parseFloat(editFormData.beneficiaryPercentage) || 0
         }
       };
-      
       const response = await fetch(`/api/human-resources-dashboard/employee-management/query-update/update/${selectedEmployee.EmployeeID}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateData),
       });
       const data = await response.json();
-      
       if (response.ok && data.success) {
         setShowDetailsModal(false);
         setEmployeeDetails(null);
         setSelectedEmployee(null);
         setIsEditing(false);
         await fetchEmployees();
-        
-        // Verificar si se generaron nuevos documentos
         if (data.contractFileURL || data.warningFileURL || data.letterFileURL || data.agreementFileURL) {
           const nombreCompleto = data.employeeName || `${editFormData.firstName} ${editFormData.lastName} ${editFormData.middleName}`.trim();
-          
-          // Agregar timestamp para evitar caché
           const timestamp = Date.now();
-          
           setUpdateSuccessDetails({
             empleadoId: data.employeeId,
             nombre: nombreCompleto,
             puesto: data.employeePosition || editFormData.puesto,
             tipoPersonal: selectedEmployee.tipo === 'BASE' ? 'PERSONAL BASE' : 'PERSONAL DE PROYECTO',
             fechaRegistro: new Date().toLocaleDateString('es-MX'),
-            // Usar las URLs que vienen del servidor (son las URLs de UploadThing)
             ftRh02PdfUrl: data.contractFileURL || `/api/download/pdf/FT-RH-02?empleadoId=${data.employeeId}&tipo=${selectedEmployee.tipo}&_t=${timestamp}`,
             ftRh02PdfDownloadUrl: data.contractFileURL || `/api/download/pdf/FT-RH-02?empleadoId=${data.employeeId}&tipo=${selectedEmployee.tipo}&_t=${timestamp}`,
             ftRh04PdfUrl: data.warningFileURL || `/api/download/pdf/FT-RH-04?empleadoId=${data.employeeId}&tipo=${selectedEmployee.tipo}&_t=${timestamp}`,
@@ -1121,6 +1089,138 @@ export default function EmployeesListPage() {
     } finally {
       setSavingEdit(false);
       setUploadProgress(0);
+    }
+  };
+
+  // ============================================================
+  // HANDLERS DE ASIGNACIÓN DE PROYECTO (PERSONAL BASE)
+  // ⚠️ Status NO se captura - se hereda de employees
+  // ============================================================
+  const openNewAssignment = () => {
+    setEditingAssignmentId(null);
+    setAssignmentForm(emptyAssignmentForm);
+    setAssignmentError('');
+    // Guardar el status actual del empleado para mostrarlo como info
+    setAssignmentEmployeeStatus(selectedEmployee?.Status ?? 1);
+    setShowAssignmentModal(true);
+  };
+
+  const openEditAssignment = (assignment: ProjectAssignment) => {
+    setEditingAssignmentId(assignment.AssignmentID);
+    setAssignmentForm({
+      ProjectID: assignment.ProjectID ? String(assignment.ProjectID) : '',
+      RoleInProject: assignment.RoleInProject || '',
+      Position: assignment.Position || '',
+      StartDate: formatDateForInput(assignment.StartDate || ''),
+      EndDate: formatDateForInput(assignment.EndDate || ''),
+      WorkSchedule: assignment.WorkSchedule || '',
+      SalaryInProject: assignment.SalaryInProject?.toString() || '',
+      Residence: assignment.Residence || '',
+      Observations: assignment.Observations || ''
+    });
+    setAssignmentEmployeeStatus(selectedEmployee?.Status ?? 1);
+    setAssignmentError('');
+    setShowAssignmentModal(true);
+  };
+
+  const handleAssignmentFormChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    const shouldUpperCase = !['ProjectID', 'StartDate', 'EndDate', 'SalaryInProject', 'Residence'].includes(name);
+    const newValue = shouldUpperCase ? toUpperCaseWithAccents(value) : value;
+    setAssignmentForm(prev => ({ ...prev, [name]: newValue }));
+  };
+
+  const validateAssignment = (): boolean => {
+    if (!assignmentForm.ProjectID) {
+      setAssignmentError('EL PROYECTO ES REQUERIDO');
+      return false;
+    }
+    if (!assignmentForm.Position) {
+      setAssignmentError('EL PUESTO ES REQUERIDO');
+      return false;
+    }
+    if (!assignmentForm.StartDate) {
+      setAssignmentError('LA FECHA DE INICIO ES REQUERIDA');
+      return false;
+    }
+    if (assignmentForm.EndDate && assignmentForm.StartDate && assignmentForm.EndDate < assignmentForm.StartDate) {
+      setAssignmentError('LA FECHA DE FIN NO PUEDE SER MENOR QUE LA FECHA DE INICIO');
+      return false;
+    }
+    return true;
+  };
+
+  const handleSaveAssignment = async () => {
+    if (!selectedEmployee) return;
+    if (!validateAssignment()) return;
+    try {
+      setSavingAssignment(true);
+      setAssignmentError('');
+
+      // ⚠️ NO se envía Status: el backend lo hereda de employees
+      const payload = {
+        employeeId: selectedEmployee.EmployeeID,
+        assignment: {
+          ProjectID: parseInt(assignmentForm.ProjectID),
+          RoleInProject: toUpperCaseWithAccents(assignmentForm.RoleInProject),
+          Position: toUpperCaseWithAccents(assignmentForm.Position),
+          StartDate: assignmentForm.StartDate || null,
+          EndDate: assignmentForm.EndDate || null,
+          WorkSchedule: toUpperCaseWithAccents(assignmentForm.WorkSchedule),
+          SalaryInProject: assignmentForm.SalaryInProject ? parseFloat(assignmentForm.SalaryInProject) : null,
+          Residence: toUpperCaseWithAccents(assignmentForm.Residence),
+          Observations: toUpperCaseWithAccents(assignmentForm.Observations)
+        }
+      };
+
+      const url = editingAssignmentId
+        ? `/api/human-resources-dashboard/employee-management/query-update/assignments/${editingAssignmentId}`
+        : `/api/human-resources-dashboard/employee-management/query-update/assignments`;
+      const method = editingAssignmentId ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setShowAssignmentModal(false);
+        setAssignmentForm(emptyAssignmentForm);
+        setEditingAssignmentId(null);
+        await refreshEmployeeDetails();
+        setSuccessMessage(editingAssignmentId ? 'ASIGNACIÓN ACTUALIZADA EXITOSAMENTE' : 'ASIGNACIÓN CREADA EXITOSAMENTE');
+        setTimeout(() => setSuccessMessage(''), 3000);
+      } else {
+        setAssignmentError(data.message || 'ERROR AL GUARDAR LA ASIGNACIÓN');
+      }
+    } catch (error) {
+      console.error('Error al guardar asignación:', error);
+      setAssignmentError('ERROR DE CONEXIÓN AL GUARDAR LA ASIGNACIÓN');
+    } finally {
+      setSavingAssignment(false);
+    }
+  };
+
+  const handleDeleteAssignment = async (assignmentId: number) => {
+    if (!selectedEmployee) return;
+    if (!confirm('¿Está seguro de eliminar esta asignación de proyecto?')) return;
+    try {
+      const response = await fetch(`/api/human-resources-dashboard/employee-management/query-update/assignments/${assignmentId}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        await refreshEmployeeDetails();
+        setSuccessMessage('ASIGNACIÓN ELIMINADA EXITOSAMENTE');
+        setTimeout(() => setSuccessMessage(''), 3000);
+      } else {
+        setError(data.message || 'ERROR AL ELIMINAR LA ASIGNACIÓN');
+      }
+    } catch (error) {
+      console.error('Error al eliminar asignación:', error);
+      setError('ERROR DE CONEXIÓN AL ELIMINAR LA ASIGNACIÓN');
     }
   };
 
@@ -1340,40 +1440,16 @@ export default function EmployeesListPage() {
                             <div className="relative inline-block">
                               <div className="flex flex-col space-y-1">
                                 {employee.ContractFileURL && (
-                                  <button
-                                    onClick={() => openPdfInNewTab(employee.ContractFileURL!)}
-                                    className="text-xs text-gray-700 hover:underline"
-                                    title="FT-RH-02 (Contrato)"
-                                  >
-                                    Ver Contrato
-                                  </button>
+                                  <button onClick={() => openPdfInNewTab(employee.ContractFileURL!)} className="text-xs text-gray-700 hover:underline" title="FT-RH-02 (Contrato)">Ver Contrato</button>
                                 )}
                                 {employee.WarningFileURL && (
-                                  <button
-                                    onClick={() => openPdfInNewTab(employee.WarningFileURL!)}
-                                    className="text-xs text-gray-700 hover:underline"
-                                    title="FT-RH-04 (Aviso de Contratación)"
-                                  >
-                                    Ver Aviso de Contratación
-                                  </button>
+                                  <button onClick={() => openPdfInNewTab(employee.WarningFileURL!)} className="text-xs text-gray-700 hover:underline" title="FT-RH-04 (Aviso de Contratación)">Ver Aviso de Contratación</button>
                                 )}
                                 {employee.LetterFileURL && (
-                                  <button
-                                    onClick={() => openPdfInNewTab(employee.LetterFileURL!)}
-                                    className="text-xs text-gray-700 hover:underline"
-                                    title="FT-RH-07 (Carta Compromiso)"
-                                  >
-                                    Ver Carta Compromiso
-                                  </button>
+                                  <button onClick={() => openPdfInNewTab(employee.LetterFileURL!)} className="text-xs text-gray-700 hover:underline" title="FT-RH-07 (Carta Compromiso)">Ver Carta Compromiso</button>
                                 )}
                                 {employee.AgreementFileURL && (
-                                  <button
-                                    onClick={() => openPdfInNewTab(employee.AgreementFileURL!)}
-                                    className="text-xs text-gray-700 hover:underline"
-                                    title="FT-RH-29 (Convenio)"
-                                  >
-                                    Ver Convenio
-                                  </button>
+                                  <button onClick={() => openPdfInNewTab(employee.AgreementFileURL!)} className="text-xs text-gray-700 hover:underline" title="FT-RH-29 (Convenio)">Ver Convenio</button>
                                 )}
                               </div>
                             </div>
@@ -1383,11 +1459,7 @@ export default function EmployeesListPage() {
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex items-center justify-center gap-2">
-                            <button 
-                              onClick={() => fetchEmployeeDetails(employee)} 
-                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors" 
-                              title="Ver detalles"
-                            >
+                            <button onClick={() => fetchEmployeeDetails(employee)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="Ver detalles">
                               <Eye className="h-4 w-4" />
                             </button>
                           </div>
@@ -1417,20 +1489,8 @@ export default function EmployeesListPage() {
       </main>
       <Footer />
 
-      {/* MODAL DE ADVERTENCIA PARA EMPLEADO DE PROYECTO ACTIVO */}
       {showActiveEmployeeModal && (
-        <div 
-          className="fixed inset-0 flex items-center justify-center p-4" 
-          style={{ 
-            margin: 0, 
-            top: 0, 
-            left: 0, 
-            right: 0, 
-            bottom: 0, 
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            zIndex: 99999
-          }}
-        >
+        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ margin: 0, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.7)', zIndex: 99999 }}>
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full animate-fade-in" style={{ zIndex: 100000 }}>
             <div className="p-6 pb-4 border-b border-gray-300 flex items-center justify-between bg-white rounded-t-lg">
               <div className="flex items-center">
@@ -1450,10 +1510,7 @@ export default function EmployeesListPage() {
               </p>
             </div>
             <div className="p-6 pt-4 border-t border-gray-300 bg-gray-50 flex justify-end rounded-b-lg">
-              <button
-                onClick={() => { setShowActiveEmployeeModal(false); setIsEditing(false); }}
-                className="bg-[#3a6ea5] text-white font-bold py-2.5 px-6 rounded-lg hover:bg-[#2d5592] transition-colors"
-              >
+              <button onClick={() => { setShowActiveEmployeeModal(false); setIsEditing(false); }} className="bg-[#3a6ea5] text-white font-bold py-2.5 px-6 rounded-lg hover:bg-[#2d5592] transition-colors">
                 ENTENDIDO
               </button>
             </div>
@@ -1461,7 +1518,6 @@ export default function EmployeesListPage() {
         </div>
       )} 
 
-      {/* MODAL DE DETALLES/EDICIÓN */}
       {showDetailsModal && selectedEmployee && employeeDetails && (
         <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/70" style={{ margin: 0, top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}>
           <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto animate-fade-in" style={{ zIndex: 10000 }}>
@@ -1474,10 +1530,7 @@ export default function EmployeesListPage() {
               </div>
               <div className="flex items-center space-x-2">
                 {!isEditing && (
-                  <button 
-                    onClick={() => handleEditClick(selectedEmployee)} 
-                    className="px-6 py-2.5 bg-[#3a6ea5] text-white font-bold rounded-lg hover:bg-[#2d5592] transition-colors flex items-center justify-center whitespace-nowrap"
-                  >
+                  <button onClick={() => handleEditClick(selectedEmployee)} className="px-6 py-2.5 bg-[#3a6ea5] text-white font-bold rounded-lg hover:bg-[#2d5592] transition-colors flex items-center justify-center whitespace-nowrap">
                     EDITAR
                   </button>
                 )}
@@ -1514,7 +1567,6 @@ export default function EmployeesListPage() {
                     </div>
                   </div>
 
-                  {/* Contacto */}
                   <div className="bg-gray-50 rounded-lg p-4">
                     <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">CONTACTO</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1523,7 +1575,6 @@ export default function EmployeesListPage() {
                     </div>
                   </div>
 
-                  {/* Dirección */}
                   <div className="bg-gray-50 rounded-lg p-4">
                     <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">DIRECCIÓN</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1537,7 +1588,6 @@ export default function EmployeesListPage() {
                     </div>
                   </div>
 
-                  {/* Información Laboral */}
                   <div className="bg-gray-50 rounded-lg p-4">
                     <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">INFORMACIÓN LABORAL</h3>
                     {selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1 && (
@@ -1551,51 +1601,24 @@ export default function EmployeesListPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       <div>
                         <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Puesto</label>
-                        <input 
-                          type="text" 
-                          name="puesto" 
-                          value={editFormData.puesto} 
-                          onChange={handleEditFormChange} 
-                          disabled={selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1}
-                          className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${(selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1) ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`} 
-                        />
+                        <input type="text" name="puesto" value={editFormData.puesto} onChange={handleEditFormChange} disabled={selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1} className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${(selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1) ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`} />
                       </div>
                       {selectedEmployee.tipo === 'BASE' && (
                         <>
                           <div>
                             <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Área</label>
-                            <input 
-                              type="text" 
-                              name="area" 
-                              value={editFormData.area} 
-                              onChange={handleEditFormChange} 
-                              className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" 
-                            />
+                            <input type="text" name="area" value={editFormData.area} onChange={handleEditFormChange} className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" />
                           </div>
                           <div>
                             <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Fecha Inicio</label>
-                            <input 
-                              type="date" 
-                              name="fechaInicio" 
-                              value={editFormData.fechaInicio} 
-                              onChange={handleEditFormChange} 
-                              className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" 
-                            />
+                            <input type="date" name="fechaInicio" value={editFormData.fechaInicio} onChange={handleEditFormChange} className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" />
                           </div>
                           <div>
                             <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Jefe Directo</label>
-                            <select 
-                              name="jefeDirectoId" 
-                              value={editFormData.jefeDirectoId} 
-                              onChange={handleEditFormChange} 
-                              disabled={loadingPersonalBase}
-                              className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${loadingPersonalBase ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
-                            >
-                              <option value="">SELECCIONE JEFE DIRECTO</option>
+                            <select name="jefeDirectoId" value={editFormData.jefeDirectoId} onChange={handleEditFormChange} disabled={loadingPersonalBase} className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${loadingPersonalBase ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`}>
+                              <option value="">SIN JEFE DIRECTO</option>
                               {personalBaseList.map((jefe) => (
-                                <option key={jefe.id} value={jefe.id}>
-                                  {jefe.nombreCompleto} - {jefe.puesto}
-                                </option>
+                                <option key={jefe.id} value={jefe.id}>{jefe.nombreCompleto} - {jefe.puesto}</option>
                               ))}
                             </select>
                           </div>
@@ -1605,86 +1628,46 @@ export default function EmployeesListPage() {
                         <>
                           <div>
                             <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Proyecto</label>
-                            <select 
-                              name="proyectoId" 
-                              value={editFormData.proyectoId} 
-                              onChange={handleEditFormChange} 
-                              disabled={selectedEmployee.Status === 1}
-                              className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${selectedEmployee.Status === 1 ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
-                            >
+                            <select name="proyectoId" value={editFormData.proyectoId} onChange={handleEditFormChange} disabled={selectedEmployee.Status === 1} className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${selectedEmployee.Status === 1 ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`}>
                               <option value="">SELECCIONE PROYECTO</option>
                               {proyectos.map((proyecto) => (
-                                <option key={proyecto.ProjectID} value={proyecto.ProjectID}>
-                                  {proyecto.NameProject}
-                                </option>
+                                <option key={proyecto.ProjectID} value={proyecto.ProjectID}>{proyecto.NameProject}</option>
                               ))}
                             </select>
                           </div>
                           <div>
-                            <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Fecha Inicio (Proyecto)</label>
-                            <input 
-                              type="text" 
-                              value={selectedProjectDates.startDate ? formatDate(selectedProjectDates.startDate) : 'N/A'} 
-                              disabled 
-                              className="w-full px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded text-gray-600" 
-                            />
+                            <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Fecha Inicio Contrato</label>
+                            <input type="date" name="fechaInicio" value={editFormData.fechaInicio} onChange={handleEditFormChange} disabled={selectedEmployee.Status === 1} className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${selectedEmployee.Status === 1 ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`} />
                           </div>
                           <div>
-                            <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Fecha Fin (Proyecto)</label>
-                            <input 
-                              type="text" 
-                              value={selectedProjectDates.endDate ? formatDate(selectedProjectDates.endDate) : 'N/A'} 
-                              disabled 
-                              className="w-full px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded text-gray-600" 
-                            />
+                            <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Fecha Fin Contrato</label>
+                            <input type="date" name="fechaFin" value={editFormData.fechaFin} onChange={handleEditFormChange} disabled={selectedEmployee.Status === 1} className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${selectedEmployee.Status === 1 ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`} />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Residencia</label>
+                            <select name="residencia" value={editFormData.residencia} onChange={handleEditFormChange} disabled={selectedEmployee.Status === 1} className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${selectedEmployee.Status === 1 ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`}>
+                              <option value="">Seleccione</option>
+                              <option value="LOCAL">LOCAL</option>
+                              <option value="FORANEO">FORÁNEO</option>
+                            </select>
                           </div>
                           <div>
                             <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Administrador del Proyecto</label>
-                            <input 
-                              type="text" 
-                              value={(() => {
-                                const proyecto = proyectos.find(p => p.ProjectID.toString() === editFormData.proyectoId);
-                                return proyecto?.AdminName ? `${proyecto.AdminName}${proyecto.AdminPosition ? ` - ${proyecto.AdminPosition}` : ''}` : 'SIN ADMINISTRADOR ASIGNADO';
-                              })()}
-                              disabled 
-                              className="w-full px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded text-gray-600" 
-                            />
+                            <input type="text" value={(() => { const proyecto = proyectos.find(p => p.ProjectID.toString() === editFormData.proyectoId); return proyecto?.AdminName ? `${proyecto.AdminName}${proyecto.AdminPosition ? ` - ${proyecto.AdminPosition}` : ''}` : 'SIN ADMINISTRADOR ASIGNADO'; })()} disabled className="w-full px-3 py-2 text-sm bg-gray-100 border border-gray-300 rounded text-gray-600" />
                           </div>
                         </>
                       )}
                       <div>
                         <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Salario</label>
-                        <input 
-                          type="number" 
-                          name="salario" 
-                          value={editFormData.salario} 
-                          onChange={handleEditFormChange} 
-                          step="0.01" 
-                          disabled={selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1}
-                          className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${(selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1) ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`} 
-                        />
+                        <input type="number" name="salario" value={editFormData.salario} onChange={handleEditFormChange} step="0.01" disabled={selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1} className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${(selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1) ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`} />
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Salario IMSS</label>
-                        <input 
-                          type="number" 
-                          name="salaryIMSS" 
-                          value={editFormData.salaryIMSS} 
-                          onChange={handleEditFormChange} 
-                          step="0.01" 
-                          disabled={selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1}
-                          className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${(selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1) ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`} 
-                        />
+                        <input type="number" name="salaryIMSS" value={editFormData.salaryIMSS} onChange={handleEditFormChange} step="0.01" disabled={selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1} className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${(selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1) ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`} />
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Horario</label>
-                        <select 
-                          name="horario" 
-                          value={editFormData.horario} 
-                          onChange={handleEditFormChange} 
-                          disabled={selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1}
-                          className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${(selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1) ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
-                        >
+                        <select name="horario" value={editFormData.horario} onChange={handleEditFormChange} disabled={selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1} className={`w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5] ${(selectedEmployee.tipo === 'PROJECT' && selectedEmployee.Status === 1) ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`}>
                           <option value="">Seleccione</option>
                           <option value="08:15 AM A 06:00 PM">08:15 AM A 06:00 PM</option>
                           <option value="OTRO">OTRO</option>
@@ -1693,20 +1676,12 @@ export default function EmployeesListPage() {
                       {selectedEmployee.tipo === 'BASE' && (
                         <div>
                           <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Fecha de Alta IMSS</label>
-                          <input 
-                            type="date" 
-                            name="fechaAltaIMSS"
-                            value={editFormData.fechaAltaIMSS || ''} 
-                            onChange={handleEditFormChange}
-                            disabled
-                            className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" 
-                          />
+                          <input type="date" name="fechaAltaIMSS" value={editFormData.fechaAltaIMSS || ''} onChange={handleEditFormChange} disabled className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" />
                         </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Documentación del Empleado */}
                   <div className="bg-gray-50 rounded-lg p-4">
                     <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">DOCUMENTACIÓN DEL EMPLEADO</h3>
                     <p className="text-xs text-gray-600 mb-4">Seleccione un archivo para reemplazar el documento actual. PDF para documentos, JPG/PNG para fotografía.</p>
@@ -1732,7 +1707,6 @@ export default function EmployeesListPage() {
                     )}
                   </div>
 
-                  {/* Beneficiario */}
                   <div className="bg-gray-50 rounded-lg p-4">
                     <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">BENEFICIARIO</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1784,8 +1758,9 @@ export default function EmployeesListPage() {
                       {selectedEmployee.tipo === 'BASE' ? <div><span className="block text-xs font-bold text-gray-500 uppercase">Área</span><span className="text-sm text-gray-900">{(selectedEmployee as BaseEmployee).Area || 'N/A'}</span></div> : <div><span className="block text-xs font-bold text-gray-500 uppercase">Proyecto</span><span className="text-sm text-gray-900">{(selectedEmployee as ProjectEmployee).ProjectName || 'N/A'}</span></div>}
                       {selectedEmployee.tipo === 'PROJECT' && (
                         <>
-                          <div><span className="block text-xs font-bold text-gray-500 uppercase">Fecha Inicio Proyecto</span><span className="text-sm text-gray-900">{formatDate(employeeDetails?.projectInfo?.startDate)}</span></div>
-                          <div><span className="block text-xs font-bold text-gray-500 uppercase">Fecha Fin Proyecto</span><span className="text-sm text-gray-900">{formatDate(employeeDetails?.projectInfo?.endDate)}</span></div>
+                          <div><span className="block text-xs font-bold text-gray-500 uppercase">Fecha Inicio Contrato</span><span className="text-sm text-gray-900">{formatDate(employeeDetails.contractInfo?.fechaInicio)}</span></div>
+                          <div><span className="block text-xs font-bold text-gray-500 uppercase">Fecha Fin Contrato</span><span className="text-sm text-gray-900">{formatDate(employeeDetails.contractInfo?.fechaFin)}</span></div>
+                          <div><span className="block text-xs font-bold text-gray-500 uppercase">Residencia</span><span className="text-sm text-gray-900">{employeeDetails.contractInfo?.residence || 'N/A'}</span></div>
                         </>
                       )}
                       <div><span className="block text-xs font-bold text-gray-500 uppercase">Salario</span><span className="text-sm text-gray-900">{formatCurrency(selectedEmployee.Salary)}</span></div>
@@ -1796,7 +1771,7 @@ export default function EmployeesListPage() {
                         <div><span className="block text-xs font-bold text-gray-500 uppercase">Jefe Directo</span><span className="text-sm text-gray-900">
                           {(() => {
                             const jefeId = employeeDetails.contractInfo?.jefeDirectoId;
-                            if (!jefeId) return 'N/A';
+                            if (!jefeId) return 'SIN JEFE DIRECTO';
                             const jefe = personalBaseList.find(j => j.id === jefeId);
                             return jefe ? `${jefe.nombreCompleto} - ${jefe.puesto}` : 'N/A';
                           })()}
@@ -1817,48 +1792,88 @@ export default function EmployeesListPage() {
                     </div>
                   </div>
                   
-                  {/* SECCIÓN DE FORMATOS FT-RH */}
                   {employeeDetails.contractInfo && (employeeDetails.contractInfo.contractFileURL || employeeDetails.contractInfo.warningFileURL || employeeDetails.contractInfo.letterFileURL || employeeDetails.contractInfo.agreementFileURL) && (
                     <div className="bg-gray-50 rounded-lg p-4">
                       <h3 className="font-bold text-gray-800 mb-4 text-sm uppercase border-b border-gray-200 pb-2">FORMATOS FT-RH</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {employeeDetails.contractInfo.contractFileURL && (
                           <div className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
-                            <div className="flex items-center">
-                              <File className="h-5 w-5 text-gray-500 mr-2" />
-                              <span className="text-sm font-medium text-gray-700">FT-RH-02 (Contrato por Tiempo Determinado)</span>
-                            </div>
+                            <div className="flex items-center"><File className="h-5 w-5 text-gray-500 mr-2" /><span className="text-sm font-medium text-gray-700">FT-RH-02 (Contrato por Tiempo Determinado)</span></div>
                             <button onClick={() => openPdfInNewTab(employeeDetails.contractInfo!.contractFileURL!)} className="px-3 py-1 bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors text-xs font-medium">Abrir</button>
                           </div>
                         )}
                         {employeeDetails.contractInfo.warningFileURL && (
                           <div className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
-                            <div className="flex items-center">
-                              <File className="h-5 w-5 text-gray-500 mr-2" />
-                              <span className="text-sm font-medium text-gray-700">FT-RH-04 (Aviso de Contratación)</span>
-                            </div>
+                            <div className="flex items-center"><File className="h-5 w-5 text-gray-500 mr-2" /><span className="text-sm font-medium text-gray-700">FT-RH-04 (Aviso de Contratación)</span></div>
                             <button onClick={() => openPdfInNewTab(employeeDetails.contractInfo!.warningFileURL!)} className="px-3 py-1 bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors text-xs font-medium">Abrir</button>
                           </div>
                         )}
                         {employeeDetails.contractInfo.letterFileURL && (
                           <div className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
-                            <div className="flex items-center">
-                              <File className="h-5 w-5 text-gray-500 mr-2" />
-                              <span className="text-sm font-medium text-gray-700">FT-RH-07 (Carta Compromiso)</span>
-                            </div>
+                            <div className="flex items-center"><File className="h-5 w-5 text-gray-500 mr-2" /><span className="text-sm font-medium text-gray-700">FT-RH-07 (Carta Compromiso)</span></div>
                             <button onClick={() => openPdfInNewTab(employeeDetails.contractInfo!.letterFileURL!)} className="px-3 py-1 bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors text-xs font-medium">Abrir</button>
                           </div>
                         )}
                         {employeeDetails.contractInfo.agreementFileURL && (
                           <div className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
-                            <div className="flex items-center">
-                              <File className="h-5 w-5 text-gray-500 mr-2" />
-                              <span className="text-sm font-medium text-gray-700">FT-RH-29 (Convenio de Confidencialidad)</span>
-                            </div>
+                            <div className="flex items-center"><File className="h-5 w-5 text-gray-500 mr-2" /><span className="text-sm font-medium text-gray-700">FT-RH-29 (Convenio de Confidencialidad)</span></div>
                             <button onClick={() => openPdfInNewTab(employeeDetails.contractInfo!.agreementFileURL!)} className="px-3 py-1 bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors text-xs font-medium">Abrir</button>
                           </div>
                         )}
                       </div>
+                    </div>
+                  )}
+
+                  {/* ⚠️ ASIGNACIONES A PROYECTOS (SOLO BASE) - Status es solo lectura, viene de employees */}
+                  {selectedEmployee.tipo === 'BASE' && (
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-4 border-b border-gray-200 pb-2">
+                        <h3 className="font-bold text-gray-800 text-sm uppercase flex items-center">
+                          ASIGNACIONES A PROYECTOS
+                        </h3>
+                        <button onClick={openNewAssignment} className="px-3 py-1.5 bg-[#3a6ea5] text-white text-xs font-bold rounded-md hover:bg-[#2d5592] transition-colors flex items-center">
+                          NUEVA ASIGNACIÓN
+                        </button>
+                      </div>
+                      {!employeeDetails.assignments || employeeDetails.assignments.length === 0 ? (
+                        <p className="text-sm text-gray-500 py-2">Este empleado no tiene asignaciones a proyectos registradas.</p>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-gray-100">
+                              <tr>
+                                <th className="py-2 px-3 text-left text-xs font-bold text-gray-700 uppercase border-b border-gray-300">PROYECTO</th>
+                                <th className="py-2 px-3 text-left text-xs font-bold text-gray-700 uppercase border-b border-gray-300">PUESTO</th>
+                                <th className="py-2 px-3 text-left text-xs font-bold text-gray-700 uppercase border-b border-gray-300">INICIO</th>
+                                <th className="py-2 px-3 text-left text-xs font-bold text-gray-700 uppercase border-b border-gray-300">FIN</th>
+                                <th className="py-2 px-3 text-left text-xs font-bold text-gray-700 uppercase border-b border-gray-300">RESIDENCIA</th>
+                                <th className="py-2 px-3 text-center text-xs font-bold text-gray-700 uppercase border-b border-gray-300">ACCIONES</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {employeeDetails.assignments.map((a) => (
+                                <tr key={a.AssignmentID} className="border-b border-gray-200">
+                                  <td className="py-2 px-3 text-gray-800">{a.ProjectName || `Proyecto ${a.ProjectID}`}</td>
+                                  <td className="py-2 px-3 text-gray-800">{a.Position || 'N/A'}</td>
+                                  <td className="py-2 px-3 text-gray-800">{formatDate(a.StartDate || undefined)}</td>
+                                  <td className="py-2 px-3 text-gray-800">{formatDate(a.EndDate || undefined)}</td>
+                                  <td className="py-2 px-3 text-gray-800">{a.Residence || 'N/A'}</td>
+                                  <td className="py-2 px-3 text-center">
+                                    <div className="flex items-center justify-center gap-1">
+                                      <button onClick={() => openEditAssignment(a)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Editar asignación">
+                                        <Edit className="h-4 w-4" />
+                                      </button>
+                                      <button onClick={() => handleDeleteAssignment(a.AssignmentID)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="Eliminar asignación">
+                                        <Trash className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1903,499 +1918,329 @@ export default function EmployeesListPage() {
         </div>
       )}
 
-      {/* MODAL DE CONFIRMACIÓN DE ACTUALIZACIÓN CON FORMATOS */}
-        {showUpdateSuccessModal && updateSuccessDetails && (
-          <div className="fixed inset-0 flex items-center justify-center z-[9999] p-4 bg-black/70" style={{ margin: 0, top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}>
-            <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full h-[90vh] flex flex-col animate-fade-in" style={{ zIndex: 10000 }}>
-              <div className="p-6 pb-4 border-b flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900 tracking-tight flex items-center">
-                    <CheckCircle className="h-5 w-5 text-green-600 mr-2" />
-                    ¡ACTUALIZACIÓN EXITOSA!
-                  </h2>
-                  <p className="text-gray-600 mt-1 text-sm">
-                    El empleado ha sido actualizado correctamente.
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowUpdateSuccessModal(false);
-                    setUpdateSuccessDetails(null);
-                    setUpdateFormatoActivo('FT-RH-02');
-                  }}
-                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-                  aria-label="Cerrar modal"
-                >
-                  <X className="h-5 w-5 text-gray-500" />
-                </button>
+      {/* ⚠️ MODAL ASIGNACIÓN - SIN campo Status (se hereda de employees) */}
+      {showAssignmentModal && selectedEmployee && (
+        <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/70" style={{ margin: 0, top: 0, left: 0, right: 0, bottom: 0, zIndex: 10001 }}>
+          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto animate-fade-in" style={{ zIndex: 10002 }}>
+            <div className="p-6 pb-4 border-b border-gray-300 flex items-center justify-between sticky top-0 bg-white z-10">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 tracking-tight">
+                  {editingAssignmentId ? 'EDITAR ASIGNACIÓN DE PROYECTO' : 'NUEVA ASIGNACIÓN DE PROYECTO'}
+                </h2>
               </div>
-              
-              <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-                <div className="w-full md:w-1/3 p-6 border-r border-gray-200 overflow-y-auto">
-                  <div className="space-y-4">
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <h3 className="font-bold text-gray-800 mb-3 text-sm uppercase">DETALLES DE LA ACTUALIZACIÓN</h3>
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-center">
-                          <span className="block text-xs font-bold text-gray-700 uppercase">ID EMPLEADO:</span>
-                          <span className="text-gray-600 mt-1 text-sm">{updateSuccessDetails.empleadoId}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="block text-xs font-bold text-gray-700 uppercase">NOMBRE:</span>
-                          <span className="text-gray-600 mt-1 text-sm">{updateSuccessDetails.nombre}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="block text-xs font-bold text-gray-700 uppercase">PUESTO:</span>
-                          <span className="text-gray-600 mt-1 text-sm">{updateSuccessDetails.puesto}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="block text-xs font-bold text-gray-700 uppercase">TIPO:</span>
-                          <span className="text-gray-600 mt-1 text-sm">{updateSuccessDetails.tipoPersonal}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="block text-xs font-bold text-gray-700 uppercase">FECHA DE ACTUALIZACIÓN:</span>
-                          <span className="text-gray-600 mt-1 text-sm">{updateSuccessDetails.fechaRegistro}</span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <h3 className="font-bold text-gray-800 mb-3 text-sm uppercase">DOCUMENTOS GENERADOS</h3>
-                      <div className="flex items-center justify-between mb-4">
-                        <button
-                          onClick={() => {
-                            if (updateFormatoActivo === 'FT-RH-02') setUpdateFormatoActivo('FT-RH-04');
-                            else if (updateFormatoActivo === 'FT-RH-04') setUpdateFormatoActivo('FT-RH-07');
-                            else if (updateFormatoActivo === 'FT-RH-07') setUpdateFormatoActivo('FT-RH-29');
-                            else if (updateFormatoActivo === 'FT-RH-29') setUpdateFormatoActivo('FT-RH-02');
-                          }}
-                          className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                          title="Formato anterior"
-                        >
-                          <ChevronLeft className="h-4 w-4 text-gray-700" />
-                        </button>
-                        <span className="font-bold text-gray-800 text-sm">
-                          {updateFormatoActivo === 'FT-RH-02' ? 'FORMATO FT-RH-02' : 
-                          updateFormatoActivo === 'FT-RH-04' ? 'FORMATO FT-RH-04' : 
-                          updateFormatoActivo === 'FT-RH-07' ? 'FORMATO FT-RH-07' : 
-                          'FORMATO FT-RH-29'}
-                        </span>
-                        <button
-                          onClick={() => {
-                            if (updateFormatoActivo === 'FT-RH-02') setUpdateFormatoActivo('FT-RH-04');
-                            else if (updateFormatoActivo === 'FT-RH-04') setUpdateFormatoActivo('FT-RH-07');
-                            else if (updateFormatoActivo === 'FT-RH-07') setUpdateFormatoActivo('FT-RH-29');
-                            else if (updateFormatoActivo === 'FT-RH-29') setUpdateFormatoActivo('FT-RH-02');
-                          }}
-                          className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                          title="Siguiente formato"
-                        >
-                          <ChevronRight className="h-4 w-4 text-gray-700" />
-                        </button>
-                      </div>
-                      
-                      <div className="space-y-3">
-                        {updateFormatoActivo === 'FT-RH-02' && (
-                          <>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center">
-                                <FileText className="h-5 w-5 text-gray-600 mr-2" />
-                                <span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-02 (PDF)</span>
-                              </div>
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => {
-                                    const url = updateSuccessDetails.ftRh02PdfUrl;
-                                    if (url) window.open(url, '_blank', 'noopener,noreferrer');
-                                  }}
-                                  className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                                  title="Abrir en nueva pestaña"
-                                >
-                                  <Eye className="h-4 w-4 text-gray-700" />
-                                </button>
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      const url = updateSuccessDetails.ftRh02PdfDownloadUrl;
-                                      const response = await fetch(url);
-                                      const blob = await response.blob();
-                                      const downloadUrl = window.URL.createObjectURL(blob);
-                                      const a = document.createElement('a');
-                                      a.href = downloadUrl;
-                                      a.download = `FT-RH-02_${updateSuccessDetails.empleadoId}.pdf`;
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      window.URL.revokeObjectURL(downloadUrl);
-                                      document.body.removeChild(a);
-                                    } catch (error) {
-                                      console.error('Error al descargar PDF:', error);
-                                      setError('Error al descargar el PDF');
-                                    }
-                                  }}
-                                  className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                                  title="Descargar PDF"
-                                >
-                                  <Download className="h-4 w-4 text-gray-700" />
-                                </button>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center">
-                                <FileText className="h-5 w-5 text-gray-600 mr-2" />
-                                <span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-02 (EDITABLE)</span>
-                              </div>
-                              <button
-                                onClick={async () => {
-                                  try {
-                                    const url = updateSuccessDetails.ftRh02WordUrl;
-                                    const response = await fetch(url);
-                                    const blob = await response.blob();
-                                    const downloadUrl = window.URL.createObjectURL(blob);
-                                    const a = document.createElement('a');
-                                    a.href = downloadUrl;
-                                    a.download = `FT-RH-02_${updateSuccessDetails.empleadoId}.docx`;
-                                    document.body.appendChild(a);
-                                    a.click();
-                                    window.URL.revokeObjectURL(downloadUrl);
-                                    document.body.removeChild(a);
-                                  } catch (error) {
-                                    console.error('Error al descargar editable:', error);
-                                    setError('Error al descargar el archivo editable');
-                                  }
-                                }}
-                                className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                                title="Descargar editable"
-                              >
-                                <Download className="h-4 w-4 text-gray-700" />
-                              </button>
-                            </div>
-                          </>
-                        )}
-                        
-                        {updateFormatoActivo === 'FT-RH-04' && (
-                          <>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center">
-                                <FileText className="h-5 w-5 text-gray-600 mr-2" />
-                                <span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-04 (PDF)</span>
-                              </div>
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => {
-                                    const url = updateSuccessDetails.ftRh04PdfUrl;
-                                    if (url) window.open(url, '_blank', 'noopener,noreferrer');
-                                  }}
-                                  className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                                  title="Abrir en nueva pestaña"
-                                >
-                                  <Eye className="h-4 w-4 text-gray-700" />
-                                </button>
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      const url = updateSuccessDetails.ftRh04PdfDownloadUrl;
-                                      const response = await fetch(url);
-                                      const blob = await response.blob();
-                                      const downloadUrl = window.URL.createObjectURL(blob);
-                                      const a = document.createElement('a');
-                                      a.href = downloadUrl;
-                                      a.download = `FT-RH-04_${updateSuccessDetails.empleadoId}.pdf`;
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      window.URL.revokeObjectURL(downloadUrl);
-                                      document.body.removeChild(a);
-                                    } catch (error) {
-                                      console.error('Error al descargar PDF:', error);
-                                      setError('Error al descargar el PDF');
-                                    }
-                                  }}
-                                  className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                                  title="Descargar PDF"
-                                >
-                                  <Download className="h-4 w-4 text-gray-700" />
-                                </button>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center">
-                                <FileText className="h-5 w-5 text-gray-600 mr-2" />
-                                <span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-04 (EDITABLE)</span>
-                              </div>
-                              <button
-                                onClick={async () => {
-                                  try {
-                                    const url = updateSuccessDetails.ftRh04ExcelUrl;
-                                    const response = await fetch(url);
-                                    const blob = await response.blob();
-                                    const downloadUrl = window.URL.createObjectURL(blob);
-                                    const a = document.createElement('a');
-                                    a.href = downloadUrl;
-                                    a.download = `FT-RH-04_${updateSuccessDetails.empleadoId}.xlsx`;
-                                    document.body.appendChild(a);
-                                    a.click();
-                                    window.URL.revokeObjectURL(downloadUrl);
-                                    document.body.removeChild(a);
-                                  } catch (error) {
-                                    console.error('Error al descargar editable:', error);
-                                    setError('Error al descargar el archivo editable');
-                                  }
-                                }}
-                                className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                                title="Descargar editable"
-                              >
-                                <Download className="h-4 w-4 text-gray-700" />
-                              </button>
-                            </div>
-                          </>
-                        )}
-                        
-                        {updateFormatoActivo === 'FT-RH-07' && (
-                          <>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center">
-                                <FileText className="h-5 w-5 text-gray-600 mr-2" />
-                                <span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-07 (PDF)</span>
-                              </div>
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => {
-                                    const url = updateSuccessDetails.ftRh07PdfUrl;
-                                    if (url) window.open(url, '_blank', 'noopener,noreferrer');
-                                  }}
-                                  className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                                  title="Abrir en nueva pestaña"
-                                >
-                                  <Eye className="h-4 w-4 text-gray-700" />
-                                </button>
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      const url = updateSuccessDetails.ftRh07PdfDownloadUrl;
-                                      const response = await fetch(url);
-                                      const blob = await response.blob();
-                                      const downloadUrl = window.URL.createObjectURL(blob);
-                                      const a = document.createElement('a');
-                                      a.href = downloadUrl;
-                                      a.download = `FT-RH-07_${updateSuccessDetails.empleadoId}.pdf`;
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      window.URL.revokeObjectURL(downloadUrl);
-                                      document.body.removeChild(a);
-                                    } catch (error) {
-                                      console.error('Error al descargar PDF:', error);
-                                      setError('Error al descargar el PDF');
-                                    }
-                                  }}
-                                  className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                                  title="Descargar PDF"
-                                >
-                                  <Download className="h-4 w-4 text-gray-700" />
-                                </button>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center">
-                                <FileText className="h-5 w-5 text-gray-600 mr-2" />
-                                <span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-07 (EDITABLE)</span>
-                              </div>
-                              <button
-                                onClick={async () => {
-                                  try {
-                                    const url = updateSuccessDetails.ftRh07WordUrl;
-                                    const response = await fetch(url);
-                                    const blob = await response.blob();
-                                    const downloadUrl = window.URL.createObjectURL(blob);
-                                    const a = document.createElement('a');
-                                    a.href = downloadUrl;
-                                    a.download = `FT-RH-07_${updateSuccessDetails.empleadoId}.docx`;
-                                    document.body.appendChild(a);
-                                    a.click();
-                                    window.URL.revokeObjectURL(downloadUrl);
-                                    document.body.removeChild(a);
-                                  } catch (error) {
-                                    console.error('Error al descargar editable:', error);
-                                    setError('Error al descargar el archivo editable');
-                                  }
-                                }}
-                                className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                                title="Descargar editable"
-                              >
-                                <Download className="h-4 w-4 text-gray-700" />
-                              </button>
-                            </div>
-                          </>
-                        )}
-                        
-                        {updateFormatoActivo === 'FT-RH-29' && (
-                          <>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center">
-                                <FileText className="h-5 w-5 text-gray-600 mr-2" />
-                                <span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-29 (PDF)</span>
-                              </div>
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => {
-                                    const url = updateSuccessDetails.ftRh29PdfUrl;
-                                    if (url) window.open(url, '_blank', 'noopener,noreferrer');
-                                  }}
-                                  className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                                  title="Abrir en nueva pestaña"
-                                >
-                                  <Eye className="h-4 w-4 text-gray-700" />
-                                </button>
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      const url = updateSuccessDetails.ftRh29PdfDownloadUrl;
-                                      const response = await fetch(url);
-                                      const blob = await response.blob();
-                                      const downloadUrl = window.URL.createObjectURL(blob);
-                                      const a = document.createElement('a');
-                                      a.href = downloadUrl;
-                                      a.download = `FT-RH-29_${updateSuccessDetails.empleadoId}.pdf`;
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      window.URL.revokeObjectURL(downloadUrl);
-                                      document.body.removeChild(a);
-                                    } catch (error) {
-                                      console.error('Error al descargar PDF:', error);
-                                      setError('Error al descargar el PDF');
-                                    }
-                                  }}
-                                  className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                                  title="Descargar PDF"
-                                >
-                                  <Download className="h-4 w-4 text-gray-700" />
-                                </button>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center">
-                                <FileText className="h-5 w-5 text-gray-600 mr-2" />
-                                <span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-29 (EDITABLE)</span>
-                              </div>
-                              <button
-                                onClick={async () => {
-                                  try {
-                                    const url = updateSuccessDetails.ftRh29WordUrl;
-                                    const response = await fetch(url);
-                                    const blob = await response.blob();
-                                    const downloadUrl = window.URL.createObjectURL(blob);
-                                    const a = document.createElement('a');
-                                    a.href = downloadUrl;
-                                    a.download = `FT-RH-29_${updateSuccessDetails.empleadoId}.docx`;
-                                    document.body.appendChild(a);
-                                    a.click();
-                                    window.URL.revokeObjectURL(downloadUrl);
-                                    document.body.removeChild(a);
-                                  } catch (error) {
-                                    console.error('Error al descargar editable:', error);
-                                    setError('Error al descargar el archivo editable');
-                                  }
-                                }}
-                                className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-                                title="Descargar editable"
-                              >
-                                <Download className="h-4 w-4 text-gray-700" />
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <h3 className="font-bold text-gray-800 mb-3 text-sm uppercase">DESCARGAS MASIVAS</h3>
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="block text-xs font-bold text-gray-700 uppercase">
-                            DESCARGAR TODOS LOS PDF
-                          </span>
-                          <button
-                            onClick={handleDownloadAllPDFs}
-                            disabled={downloadingZip}
-                            className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors disabled:opacity-50"
-                          >
-                            {downloadingZip ? (
-                              <div className="h-4 w-4 border-2 border-gray-700 border-t-transparent rounded-full animate-spin"></div>
-                            ) : (
-                              <Download className="h-4 w-4 text-gray-700" />
-                            )}
-                          </button>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="block text-xs font-bold text-gray-700 uppercase">
-                            DESCARGAR TODOS LOS EDITABLES
-                          </span>
-                          <button
-                            onClick={handleDownloadAllEditables}
-                            disabled={downloadingZip}
-                            className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors disabled:opacity-50"
-                          >
-                            {downloadingZip ? (
-                              <div className="h-4 w-4 border-2 border-gray-700 border-t-transparent rounded-full animate-spin"></div>
-                            ) : (
-                              <Download className="h-4 w-4 text-gray-700" />
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+              <button onClick={() => { setShowAssignmentModal(false); setAssignmentError(''); }} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {assignmentError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <div className="flex items-center">
+                    <AlertCircle className="h-4 w-4 text-red-600 mr-2" />
+                    <p className="text-sm font-medium text-gray-700">{assignmentError}</p>
                   </div>
                 </div>
-                
-                <div className="flex-1 flex flex-col p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-bold text-gray-800 text-sm uppercase">
-                      VISTA PREVIA - {
-                        updateFormatoActivo === 'FT-RH-02' ? 'FORMATO FT-RH-02' : 
-                        updateFormatoActivo === 'FT-RH-04' ? 'FORMATO FT-RH-04' : 
-                        updateFormatoActivo === 'FT-RH-07' ? 'FORMATO FT-RH-07' : 
-                        'FORMATO FT-RH-29'
-                      }
-                    </h3>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs text-gray-500">
-                        {updateFormatoActivo === 'FT-RH-02' ? '1 de 4' : 
-                        updateFormatoActivo === 'FT-RH-04' ? '2 de 4' : 
-                        updateFormatoActivo === 'FT-RH-07' ? '3 de 4' : 
-                        '4 de 4'}
-                      </span>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Proyecto *</label>
+                  <select 
+                  name="ProjectID" 
+                  value={assignmentForm.ProjectID} 
+                  onChange={handleAssignmentFormChange} disabled={loadingProjects} 
+                  className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]">
+                    <option value="">SELECCIONE UN PROYECTO</option>
+                    {proyectos.map((p) => (
+                      <option key={p.ProjectID} value={p.ProjectID}>{p.NameProject}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Puesto en el Proyecto *</label>
+                  <input 
+                  type="text" 
+                  name="Position" 
+                  value={assignmentForm.Position} 
+                  onChange={handleAssignmentFormChange} 
+                  className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" 
+                  placeholder="Ingrese el puesto del empleado en el proyecto"
+                  required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Rol en el Proyecto</label>
+                  <input 
+                  type="text" 
+                  name="RoleInProject" 
+                  value={assignmentForm.RoleInProject} 
+                  onChange={handleAssignmentFormChange} 
+                  className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" 
+                  placeholder="Ingrese el rol del empleado en el proyecto"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Fecha de Inicio *</label>
+                  <input 
+                  type="date" 
+                  name="StartDate" 
+                  value={assignmentForm.StartDate} 
+                  onChange={handleAssignmentFormChange} 
+                  className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" 
+                  required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Fecha de Fin *</label>
+                  <input 
+                  type="date" 
+                  name="EndDate" 
+                  value={assignmentForm.EndDate} 
+                  onChange={handleAssignmentFormChange} 
+                  className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" 
+                  required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Horario *</label>
+                  <input 
+                  type="text" 
+                  name="WorkSchedule" 
+                  value={assignmentForm.WorkSchedule} 
+                  onChange={handleAssignmentFormChange} 
+                  className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" 
+                  placeholder="Ingrese el horario"
+                  required 
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Salario en el Proyecto *</label>
+                  <input 
+                  type="number" 
+                  name="SalaryInProject" 
+                  value={assignmentForm.SalaryInProject} 
+                  onChange={handleAssignmentFormChange} 
+                  step="0.01" 
+                  className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" 
+                  placeholder="Ingrese el salario"
+                  required 
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Residencia *</label>
+                  <select name="Residence" value={assignmentForm.Residence} onChange={handleAssignmentFormChange} className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]">
+                    <option value="">SELECCIONE UNA OPCIÓN</option>
+                    <option value="LOCAL">LOCAL</option>
+                    <option value="FORANEO">FORÁNEO</option>
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Observaciones</label>
+                  <textarea 
+                  name="Observations" 
+                  value={assignmentForm.Observations} 
+                  onChange={handleAssignmentFormChange} 
+                  rows={3} 
+                  className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded focus:outline-none focus:border-[#3a6ea5]" 
+                  placeholder="Ingrese observaciones adicionales"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 pt-4 border-t border-gray-300 bg-gray-50 flex justify-end gap-3">
+              <button onClick={() => { setShowAssignmentModal(false); setAssignmentError(''); }} disabled={savingAssignment} className="bg-gray-200 text-black font-bold py-2.5 px-6 rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50">
+                CANCELAR
+              </button>
+              <button onClick={handleSaveAssignment} disabled={savingAssignment} className="px-6 py-2.5 bg-[#3a6ea5] text-white font-bold rounded-lg hover:bg-[#2d5592] transition-colors disabled:opacity-50 flex items-center">
+                {savingAssignment ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    GUARDANDO...
+                  </>
+                ) : (
+                  editingAssignmentId ? 'ACTUALIZAR ASIGNACIÓN' : 'CREAR ASIGNACIÓN'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showUpdateSuccessModal && updateSuccessDetails && (
+        <div className="fixed inset-0 flex items-center justify-center z-[9999] p-4 bg-black/70" style={{ margin: 0, top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}>
+          <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full h-[90vh] flex flex-col animate-fade-in" style={{ zIndex: 10000 }}>
+            <div className="p-6 pb-4 border-b flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 tracking-tight flex items-center">
+                  <CheckCircle className="h-5 w-5 text-green-600 mr-2" />
+                  ¡ACTUALIZACIÓN EXITOSA!
+                </h2>
+                <p className="text-gray-600 mt-1 text-sm">El empleado ha sido actualizado correctamente.</p>
+              </div>
+              <button onClick={() => { setShowUpdateSuccessModal(false); setUpdateSuccessDetails(null); setUpdateFormatoActivo('FT-RH-02'); }} className="p-2 hover:bg-gray-100 rounded-full transition-colors" aria-label="Cerrar modal">
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+            
+            <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+              <div className="w-full md:w-1/3 p-6 border-r border-gray-200 overflow-y-auto">
+                <div className="space-y-4">
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h3 className="font-bold text-gray-800 mb-3 text-sm uppercase">DETALLES DE LA ACTUALIZACIÓN</h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center"><span className="block text-xs font-bold text-gray-700 uppercase">ID EMPLEADO:</span><span className="text-gray-600 mt-1 text-sm">{updateSuccessDetails.empleadoId}</span></div>
+                      <div className="flex justify-between items-center"><span className="block text-xs font-bold text-gray-700 uppercase">NOMBRE:</span><span className="text-gray-600 mt-1 text-sm">{updateSuccessDetails.nombre}</span></div>
+                      <div className="flex justify-between items-center"><span className="block text-xs font-bold text-gray-700 uppercase">PUESTO:</span><span className="text-gray-600 mt-1 text-sm">{updateSuccessDetails.puesto}</span></div>
+                      <div className="flex justify-between items-center"><span className="block text-xs font-bold text-gray-700 uppercase">TIPO:</span><span className="text-gray-600 mt-1 text-sm">{updateSuccessDetails.tipoPersonal}</span></div>
+                      <div className="flex justify-between items-center"><span className="block text-xs font-bold text-gray-700 uppercase">FECHA DE ACTUALIZACIÓN:</span><span className="text-gray-600 mt-1 text-sm">{updateSuccessDetails.fechaRegistro}</span></div>
                     </div>
                   </div>
                   
-                  <div className="flex-1 border border-gray-300 rounded-lg overflow-hidden relative bg-gray-50">
-                    <iframe
-                      key={updateFormatoActivo}
-                      src={
-                        updateFormatoActivo === 'FT-RH-02' ? updateSuccessDetails.ftRh02PdfUrl :
-                        updateFormatoActivo === 'FT-RH-04' ? updateSuccessDetails.ftRh04PdfUrl : 
-                        updateFormatoActivo === 'FT-RH-07' ? updateSuccessDetails.ftRh07PdfUrl : 
-                        updateSuccessDetails.ftRh29PdfUrl
-                      }
-                      className="w-full h-full border-0"
-                      title={`Vista previa del ${updateFormatoActivo}`}
-                    />
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h3 className="font-bold text-gray-800 mb-3 text-sm uppercase">DOCUMENTOS GENERADOS</h3>
+                    <div className="flex items-center justify-between mb-4">
+                      <button onClick={() => { if (updateFormatoActivo === 'FT-RH-02') setUpdateFormatoActivo('FT-RH-04'); else if (updateFormatoActivo === 'FT-RH-04') setUpdateFormatoActivo('FT-RH-07'); else if (updateFormatoActivo === 'FT-RH-07') setUpdateFormatoActivo('FT-RH-29'); else if (updateFormatoActivo === 'FT-RH-29') setUpdateFormatoActivo('FT-RH-02'); }} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" title="Formato anterior">
+                        <ChevronLeft className="h-4 w-4 text-gray-700" />
+                      </button>
+                      <span className="font-bold text-gray-800 text-sm">
+                        {updateFormatoActivo === 'FT-RH-02' ? 'FORMATO FT-RH-02' : updateFormatoActivo === 'FT-RH-04' ? 'FORMATO FT-RH-04' : updateFormatoActivo === 'FT-RH-07' ? 'FORMATO FT-RH-07' : 'FORMATO FT-RH-29'}
+                      </span>
+                      <button onClick={() => { if (updateFormatoActivo === 'FT-RH-02') setUpdateFormatoActivo('FT-RH-04'); else if (updateFormatoActivo === 'FT-RH-04') setUpdateFormatoActivo('FT-RH-07'); else if (updateFormatoActivo === 'FT-RH-07') setUpdateFormatoActivo('FT-RH-29'); else if (updateFormatoActivo === 'FT-RH-29') setUpdateFormatoActivo('FT-RH-02'); }} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" title="Siguiente formato">
+                        <ChevronRight className="h-4 w-4 text-gray-700" />
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      {updateFormatoActivo === 'FT-RH-02' && (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center"><FileText className="h-5 w-5 text-gray-600 mr-2" /><span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-02 (PDF)</span></div>
+                            <div className="flex gap-2">
+                              <button onClick={() => { const url = updateSuccessDetails.ftRh02PdfUrl; if (url) window.open(url, '_blank', 'noopener,noreferrer'); }} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" title="Abrir en nueva pestaña"><Eye className="h-4 w-4 text-gray-700" /></button>
+                              <button onClick={async () => { try { const url = updateSuccessDetails.ftRh02PdfDownloadUrl; const response = await fetch(url); const blob = await response.blob(); const downloadUrl = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = downloadUrl; a.download = `FT-RH-02_${updateSuccessDetails.empleadoId}.pdf`; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(downloadUrl); document.body.removeChild(a); } catch (error) { console.error('Error al descargar PDF:', error); setError('Error al descargar el PDF'); } }} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" title="Descargar PDF"><Download className="h-4 w-4 text-gray-700" /></button>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center"><FileText className="h-5 w-5 text-gray-600 mr-2" /><span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-02 (EDITABLE)</span></div>
+                            <button onClick={async () => { try { const url = updateSuccessDetails.ftRh02WordUrl; const response = await fetch(url); const blob = await response.blob(); const downloadUrl = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = downloadUrl; a.download = `FT-RH-02_${updateSuccessDetails.empleadoId}.docx`; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(downloadUrl); document.body.removeChild(a); } catch (error) { console.error('Error al descargar editable:', error); setError('Error al descargar el archivo editable'); } }} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" title="Descargar editable"><Download className="h-4 w-4 text-gray-700" /></button>
+                          </div>
+                        </>
+                      )}
+                      
+                      {updateFormatoActivo === 'FT-RH-04' && (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center"><FileText className="h-5 w-5 text-gray-600 mr-2" /><span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-04 (PDF)</span></div>
+                            <div className="flex gap-2">
+                              <button onClick={() => { const url = updateSuccessDetails.ftRh04PdfUrl; if (url) window.open(url, '_blank', 'noopener,noreferrer'); }} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" title="Abrir en nueva pestaña"><Eye className="h-4 w-4 text-gray-700" /></button>
+                              <button onClick={async () => { try { const url = updateSuccessDetails.ftRh04PdfDownloadUrl; const response = await fetch(url); const blob = await response.blob(); const downloadUrl = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = downloadUrl; a.download = `FT-RH-04_${updateSuccessDetails.empleadoId}.pdf`; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(downloadUrl); document.body.removeChild(a); } catch (error) { console.error('Error al descargar PDF:', error); setError('Error al descargar el PDF'); } }} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" title="Descargar PDF"><Download className="h-4 w-4 text-gray-700" /></button>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center"><FileText className="h-5 w-5 text-gray-600 mr-2" /><span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-04 (EDITABLE)</span></div>
+                            <button onClick={async () => { try { const url = updateSuccessDetails.ftRh04ExcelUrl; const response = await fetch(url); const blob = await response.blob(); const downloadUrl = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = downloadUrl; a.download = `FT-RH-04_${updateSuccessDetails.empleadoId}.xlsx`; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(downloadUrl); document.body.removeChild(a); } catch (error) { console.error('Error al descargar editable:', error); setError('Error al descargar el archivo editable'); } }} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" title="Descargar editable"><Download className="h-4 w-4 text-gray-700" /></button>
+                          </div>
+                        </>
+                      )}
+                      
+                      {updateFormatoActivo === 'FT-RH-07' && (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center"><FileText className="h-5 w-5 text-gray-600 mr-2" /><span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-07 (PDF)</span></div>
+                            <div className="flex gap-2">
+                              <button onClick={() => { const url = updateSuccessDetails.ftRh07PdfUrl; if (url) window.open(url, '_blank', 'noopener,noreferrer'); }} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" title="Abrir en nueva pestaña"><Eye className="h-4 w-4 text-gray-700" /></button>
+                              <button onClick={async () => { try { const url = updateSuccessDetails.ftRh07PdfDownloadUrl; const response = await fetch(url); const blob = await response.blob(); const downloadUrl = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = downloadUrl; a.download = `FT-RH-07_${updateSuccessDetails.empleadoId}.pdf`; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(downloadUrl); document.body.removeChild(a); } catch (error) { console.error('Error al descargar PDF:', error); setError('Error al descargar el PDF'); } }} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" title="Descargar PDF"><Download className="h-4 w-4 text-gray-700" /></button>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center"><FileText className="h-5 w-5 text-gray-600 mr-2" /><span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-07 (EDITABLE)</span></div>
+                            <button onClick={async () => { try { const url = updateSuccessDetails.ftRh07WordUrl; const response = await fetch(url); const blob = await response.blob(); const downloadUrl = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = downloadUrl; a.download = `FT-RH-07_${updateSuccessDetails.empleadoId}.docx`; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(downloadUrl); document.body.removeChild(a); } catch (error) { console.error('Error al descargar editable:', error); setError('Error al descargar el archivo editable'); } }} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" title="Descargar editable"><Download className="h-4 w-4 text-gray-700" /></button>
+                          </div>
+                        </>
+                      )}
+                      
+                      {updateFormatoActivo === 'FT-RH-29' && (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center"><FileText className="h-5 w-5 text-gray-600 mr-2" /><span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-29 (PDF)</span></div>
+                            <div className="flex gap-2">
+                              <button onClick={() => { const url = updateSuccessDetails.ftRh29PdfUrl; if (url) window.open(url, '_blank', 'noopener,noreferrer'); }} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" title="Abrir en nueva pestaña"><Eye className="h-4 w-4 text-gray-700" /></button>
+                              <button onClick={async () => { try { const url = updateSuccessDetails.ftRh29PdfDownloadUrl; const response = await fetch(url); const blob = await response.blob(); const downloadUrl = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = downloadUrl; a.download = `FT-RH-29_${updateSuccessDetails.empleadoId}.pdf`; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(downloadUrl); document.body.removeChild(a); } catch (error) { console.error('Error al descargar PDF:', error); setError('Error al descargar el PDF'); } }} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" title="Descargar PDF"><Download className="h-4 w-4 text-gray-700" /></button>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center"><FileText className="h-5 w-5 text-gray-600 mr-2" /><span className="block text-xs font-bold text-gray-700 uppercase">FT-RH-29 (EDITABLE)</span></div>
+                            <button onClick={async () => { try { const url = updateSuccessDetails.ftRh29WordUrl; const response = await fetch(url); const blob = await response.blob(); const downloadUrl = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = downloadUrl; a.download = `FT-RH-29_${updateSuccessDetails.empleadoId}.docx`; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(downloadUrl); document.body.removeChild(a); } catch (error) { console.error('Error al descargar editable:', error); setError('Error al descargar el archivo editable'); } }} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors" title="Descargar editable"><Download className="h-4 w-4 text-gray-700" /></button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h3 className="font-bold text-gray-800 mb-3 text-sm uppercase">DESCARGAS MASIVAS</h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="block text-xs font-bold text-gray-700 uppercase">DESCARGAR TODOS LOS PDF</span>
+                        <button onClick={handleDownloadAllPDFs} disabled={downloadingZip} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors disabled:opacity-50">
+                          {downloadingZip ? (<div className="h-4 w-4 border-2 border-gray-700 border-t-transparent rounded-full animate-spin"></div>) : (<Download className="h-4 w-4 text-gray-700" />)}
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="block text-xs font-bold text-gray-700 uppercase">DESCARGAR TODOS LOS EDITABLES</span>
+                        <button onClick={handleDownloadAllEditables} disabled={downloadingZip} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors disabled:opacity-50">
+                          {downloadingZip ? (<div className="h-4 w-4 border-2 border-gray-700 border-t-transparent rounded-full animate-spin"></div>) : (<Download className="h-4 w-4 text-gray-700" />)}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
               
-              <div className="p-6 pt-4 border-t border-gray-300 bg-gray-50 flex justify-end">
-                <button
-                  onClick={() => {
-                    setShowUpdateSuccessModal(false);
-                    setUpdateSuccessDetails(null);
-                    setUpdateFormatoActivo('FT-RH-02');
-                  }}
-                  className="bg-[#3a6ea5] text-white font-bold py-2.5 px-6 rounded-lg hover:bg-[#2d5592] transition-colors"
-                >
-                  CERRAR
-                </button>
+              <div className="flex-1 flex flex-col p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-gray-800 text-sm uppercase">
+                    VISTA PREVIA - {updateFormatoActivo === 'FT-RH-02' ? 'FORMATO FT-RH-02' : updateFormatoActivo === 'FT-RH-04' ? 'FORMATO FT-RH-04' : updateFormatoActivo === 'FT-RH-07' ? 'FORMATO FT-RH-07' : 'FORMATO FT-RH-29'}
+                  </h3>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs text-gray-500">{updateFormatoActivo === 'FT-RH-02' ? '1 de 4' : updateFormatoActivo === 'FT-RH-04' ? '2 de 4' : updateFormatoActivo === 'FT-RH-07' ? '3 de 4' : '4 de 4'}</span>
+                  </div>
+                </div>
+                
+                <div className="flex-1 border border-gray-300 rounded-lg overflow-hidden relative bg-gray-50">
+                  <iframe
+                    key={updateFormatoActivo}
+                    src={
+                      updateFormatoActivo === 'FT-RH-02' ? updateSuccessDetails.ftRh02PdfUrl :
+                      updateFormatoActivo === 'FT-RH-04' ? updateSuccessDetails.ftRh04PdfUrl : 
+                      updateFormatoActivo === 'FT-RH-07' ? updateSuccessDetails.ftRh07PdfUrl : 
+                      updateSuccessDetails.ftRh29PdfUrl
+                    }
+                    className="w-full h-full border-0"
+                    title={`Vista previa del ${updateFormatoActivo}`}
+                  />
+                </div>
               </div>
             </div>
+            
+            <div className="p-6 pt-4 border-t border-gray-300 bg-gray-50 flex justify-end">
+              <button onClick={() => { setShowUpdateSuccessModal(false); setUpdateSuccessDetails(null); setUpdateFormatoActivo('FT-RH-02'); }} className="bg-[#3a6ea5] text-white font-bold py-2.5 px-6 rounded-lg hover:bg-[#2d5592] transition-colors">
+                CERRAR
+              </button>
+            </div>
           </div>
-        )}
+        </div>
+      )}
 
       <style jsx global>{`
         @keyframes fade-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
