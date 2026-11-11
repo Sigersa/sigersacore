@@ -56,6 +56,17 @@ export async function GET(
     let projectInfo: any = null;
     let fechaAltaIMSS: string | null = null;
     let uniqueKey = `${employeeId}_${tipo}`;
+    let assignments: any[] = [];
+    let employeeStatus: number | null = null;
+
+    // Obtener Status del empleado (para asignaciones y UI)
+    const [empStatusRows] = await connection.execute(
+      `SELECT Status FROM employees WHERE EmployeeID = ?`,
+      [employeeId]
+    ) as any;
+    if (Array.isArray(empStatusRows) && empStatusRows.length > 0) {
+      employeeStatus = empStatusRows[0].Status;
+    }
 
     if (tipo === 'BASE') {
       const [personalRows] = await connection.execute(`
@@ -144,7 +155,6 @@ export async function GET(
           };
         }
 
-        // Obtener Fecha de Alta IMSS
         const [imssMovements] = await connection.execute(`
           SELECT eii.DateMovement 
           FROM basepersonnel bp
@@ -188,6 +198,47 @@ export async function GET(
         if (Array.isArray(docRows) && docRows.length > 0) {
           documentacion = (docRows as any[])[0];
         }
+
+        // ⚠️ Asignaciones: Status viene de employees (e.Status), no de ppa.Status
+        const [assignmentRows] = await connection.execute(`
+          SELECT 
+            ppa.AssignmentID,
+            ppa.EmployeeID,
+            ppa.ProjectID,
+            p.NameProject AS ProjectName,
+            ppa.RoleInProject,
+            ppa.Position,
+            ppa.StartDate,
+            ppa.EndDate,
+            ppa.WorkSchedule,
+            ppa.SalaryInProject,
+            ppa.Residence,
+            e.Status AS Status,
+            ppa.Observations
+          FROM projectpersonnelassignment ppa
+          LEFT JOIN projects p ON p.ProjectID = ppa.ProjectID
+          LEFT JOIN employees e ON e.EmployeeID = ppa.EmployeeID
+          WHERE ppa.EmployeeID = ?
+          ORDER BY ppa.AssignmentID DESC
+        `, [employeeId]);
+
+        if (Array.isArray(assignmentRows)) {
+          assignments = (assignmentRows as any[]).map(a => ({
+            AssignmentID: a.AssignmentID,
+            EmployeeID: a.EmployeeID,
+            ProjectID: a.ProjectID,
+            ProjectName: a.ProjectName,
+            RoleInProject: a.RoleInProject,
+            Position: a.Position,
+            StartDate: a.StartDate,
+            EndDate: a.EndDate,
+            WorkSchedule: a.WorkSchedule,
+            SalaryInProject: a.SalaryInProject,
+            Residence: a.Residence,
+            Status: a.Status,
+            Observations: a.Observations
+          }));
+        }
       }
 
     } else {
@@ -216,7 +267,10 @@ export async function GET(
             Salary, 
             WorkSchedule, 
             ProjectID, 
-            Status
+            Status,
+            StartDate,
+            EndDate,
+            Residence
           FROM projectcontracts
           WHERE ProjectPersonnelID = ?
           ORDER BY ContractID DESC
@@ -291,7 +345,6 @@ export async function GET(
           };
         }
 
-        // Obtener Fecha de Alta IMSS para proyecto
         const [imssMovements] = await connection.execute(`
           SELECT eii.DateMovement 
           FROM projectpersonnel pp
@@ -318,7 +371,10 @@ export async function GET(
             salary: lastContract.Salary,
             workSchedule: lastContract.WorkSchedule,
             projectId: lastContract.ProjectID,
-            status: lastContract.Status
+            status: lastContract.Status,
+            fechaInicio: lastContract.StartDate,
+            fechaFin: lastContract.EndDate,
+            residence: lastContract.Residence
           };
           
           if (personalInfo) {
@@ -397,7 +453,9 @@ export async function GET(
       beneficiario,
       documentacion,
       projectInfo,
-      fechaAltaIMSS
+      fechaAltaIMSS,
+      assignments,
+      employeeStatus
     });
 
   } catch (error) {
